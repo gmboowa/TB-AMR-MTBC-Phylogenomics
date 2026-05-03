@@ -189,13 +189,13 @@ For larger datasets, especially when using Gubbins & IQ-TREE2, consider increasi
 
 ### SNP phylogenomics
 
-▪ Per-sample Snippy variant calls  
-▪ Snippy-core alignment  
-▪ Core SNP VCF  
-▪ Optional Gubbins recombination-filtered alignment  
-▪ IQ-TREE2 maximum-likelihood tree  
-▪ Bootstrap-supported tree file  
-▪ Tree visualization as PNG or SVG  
+- **⬤ Per-sample Snippy variant calls**  
+- **⬤ Snippy-core alignment**  
+- **⬤ Core SNP VCF**  
+- **⬤ Optional Gubbins recombination-filtered alignment**  
+- **⬤ IQ-TREE2 maximum-likelihood tree**  
+- **⬤ Bootstrap-supported tree file**  
+- **⬤ Tree visualization as PNG or SVG**
 
 ### Interactive reports
 
