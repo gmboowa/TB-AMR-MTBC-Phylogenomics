@@ -1,0 +1,22 @@
+title: "TB-AMR-MTBC-Phylogenomics Reports"
+description: "Interactive HTML reports for tuberculosis genomic epidemiology, AMR profiling, lineage assignment, and core-SNP phylogenomics"
+theme: minima
+url: "https://gmboowa.github.io"
+baseurl: "/TB-AMR-MTBC-Phylogenomics"
+
+# Build settings
+markdown: kramdown
+
+plugins:
+  - jekyll-feed
+
+# Optional but useful
+exclude:
+  - README.md
+  - LICENSE
+  - "*.wdl"
+  - "*.json"
+
+# Custom variables (optional for future expansion)
+author: "Gerald Mboowa"
+project: "TB-AMR-MTBC-Phylogenomics"
