@@ -21,7 +21,7 @@ https://gmboowa.github.io/TB-AMR-MTBC-Phylogenomics/
 ## Workflow overview
 <div align="center">
 <pre>
-```text
+
 Paired-end FASTQ files
         ⬇
 Read trimming
@@ -41,9 +41,10 @@ Optional Gubbins recombination filtering
 IQ-TREE2 maximum-likelihood phylogeny
         ⬇
 Tree visualization + integrated HTML report
-```
+
 </pre>
 </div>
+```
 ## Key features
 
 ▪ Paired-end FASTQ input support  
