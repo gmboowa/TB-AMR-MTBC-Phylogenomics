@@ -1,22 +1,9 @@
-# TB-AMR-MTBC-Phylogenomics
+## TB-AMR-MTBC-Phylogenomics
 
-A reproducible, containerized WDL/Cromwell workflow for *Mycobacterium tuberculosis* complex (MTBC) antimicrobial-resistance profiling and core-SNP phylogenomics.
+A reproducible, containerized WDL/Cromwell workflow for *Mycobacterium tuberculosis* complex (MTBC) antimicrobial-resistance profiling & core-SNP phylogenomics.
 
-The workflow supports paired-end Illumina FASTQ inputs and produces quality-control summaries, TB-Profiler drug-resistance and lineage reports, MTBC-only sample filtering, Snippy-based core-SNP outputs, optional Gubbins recombination filtering, IQ-TREE2 maximum-likelihood phylogeny, tree visualization, and interactive HTML reports for GitHub Pages.
+The workflow supports paired-end Illumina FASTQ inputs & produces quality-control summaries, TB-Profiler drug-resistance and lineage reports, MTBC-only sample filtering, Snippy-based core-SNP outputs, optional Gubbins recombination filtering, IQ-TREE2 maximum-likelihood phylogeny, tree visualization, and interactive HTML reports for GitHub Pages.
 
-## Recommended repository name
-
-**`TB-AMR-MTBC-Phylogenomics`**
-
-Why this name works:
-
-▪ It clearly communicates tuberculosis, antimicrobial resistance, MTBC & phylogenomics.  
-▪ It matches the WDL workflow name: `TB_AMR_MTBC_Phylogenomics`.  
-▪ It is suitable for a GitHub Pages URL such as:  
-
-```text
-https://gmboowa.github.io/TB-AMR-MTBC-Phylogenomics/
-```
 
 ## Workflow overview
 <div align="center">
@@ -28,7 +15,7 @@ Read trimming
         ⬇
 FastQC + MultiQC
         ⬇
-TB-Profiler AMR, species, and lineage profiling
+TB-Profiler AMR, species & lineage profiling
         ⬇
 MTBC-only sample filtering
         ⬇
@@ -44,14 +31,14 @@ Tree visualization + integrated HTML report
 
 </pre>
 </div>
-```
+
 ## Key features
 
 ▪ Paired-end FASTQ input support  
 ▪ Adapter trimming before downstream analysis  
-▪ FastQC and MultiQC quality-control reporting  
+▪ FastQC & MultiQC quality-control reporting  
 ▪ TB-Profiler-based drug-resistance prediction  
-▪ MTBC lineage and sub-lineage reporting  
+▪ MTBC lineage & sub-lineage reporting  
 ▪ MTBC-only filtering before phylogenomic reconstruction  
 ▪ Snippy-based reference-guided variant calling  
 ▪ Core-SNP alignment generation using Snippy-core  
@@ -88,7 +75,7 @@ TB-AMR-MTBC-Phylogenomics/
 | Docker | Runs containerized bioinformatics tools |
 | Paired-end FASTQ files | Input sequencing data |
 | Adapter FASTA file | Required for trimming |
-| MTBC GenBank reference | Required for Snippy and phylogenomic analysis |
+| MTBC GenBank reference | Required for Snippy & phylogenomic analysis |
 
 ## Main workflow inputs
 
@@ -98,8 +85,8 @@ TB-AMR-MTBC-Phylogenomics/
 | `adapters` | Adapter FASTA file used by the trimming step |
 | `mtbc_reference_genbank` | MTBC reference genome in GenBank format |
 | `do_trimming` | Enables read trimming |
-| `do_quality_control` | Enables FastQC and MultiQC |
-| `do_tb_profiler` | Enables TB-Profiler AMR and lineage analysis |
+| `do_quality_control` | Enables FastQC & MultiQC |
+| `do_tb_profiler` | Enables TB-Profiler AMR & lineage analysis |
 | `do_phylogeny` | Enables MTBC-only SNP phylogenomics |
 | `use_gubbins` | Enables optional recombination filtering |
 | `tbprofiler_docker` | Docker image for TB-Profiler |
@@ -126,7 +113,35 @@ The input FASTQ files must be ordered like this:
     "/path/to/sample1_2.fastq.gz",
     "/path/to/sample2_1.fastq.gz",
     "/path/to/sample2_2.fastq.gz"
-  ]
+  ],
+
+  "TB_AMR_MTBC_Phylogenomics.adapters": "~/adapters.fa",
+  "TB_AMR_MTBC_Phylogenomics.mtbc_reference_genbank": "~/H37Rv.gb",
+
+  "TB_AMR_MTBC_Phylogenomics.do_trimming": true,
+  "TB_AMR_MTBC_Phylogenomics.do_quality_control": true,
+  "TB_AMR_MTBC_Phylogenomics.do_tb_profiler": true,
+  "TB_AMR_MTBC_Phylogenomics.do_phylogeny": true,
+  "TB_AMR_MTBC_Phylogenomics.use_gubbins": true,
+
+  "TB_AMR_MTBC_Phylogenomics.tbprofiler_docker": "staphb/tbprofiler:6.6.6",
+  "TB_AMR_MTBC_Phylogenomics.snippy_reference_type": "genbank",
+
+  "TB_AMR_MTBC_Phylogenomics.iqtree2_model": "GTR+G",
+  "TB_AMR_MTBC_Phylogenomics.iqtree2_bootstraps": 1000,
+  "TB_AMR_MTBC_Phylogenomics.min_mtbc_samples_for_tree": 3,
+
+  "TB_AMR_MTBC_Phylogenomics.report_nonsynonymous_drug_gene_mutations": true,
+  "TB_AMR_MTBC_Phylogenomics.tb_drug_resistance_genes":   "rpoB,katG,inhA,fabG1,ahpC,embB,pncA,rpsL,rrs,gyrA,gyrB,eis,ethA,ethR,thyA,folC,alr,ddl,gidB,tlyA,rrl,atpE,rv0678,pepQ",
+
+  "TB_AMR_MTBC_Phylogenomics.max_cpus": 8,
+  "TB_AMR_MTBC_Phylogenomics.max_memory_gb": 16,
+  "TB_AMR_MTBC_Phylogenomics.min_read_length": 50,
+  "TB_AMR_MTBC_Phylogenomics.min_mapping_quality": 20,
+
+  "TB_AMR_MTBC_Phylogenomics.tree_width": 2400,
+  "TB_AMR_MTBC_Phylogenomics.tree_height": 1600,
+  "TB_AMR_MTBC_Phylogenomics.tree_image_format": "png"
 }
 ```
 
@@ -135,13 +150,13 @@ The input FASTQ files must be ordered like this:
 From the repository root:
 
 ```bash
-java -jar cromwell-<version>.jar run TB_5.wdl --inputs examples/inputs.example.json
+java -jar cromwell-<version>.jar run TB.wdl --inputs ~/inputs.example.json
 ```
 
 For example:
 
 ```bash
-java -jar cromwell-92.jar run TB_5.wdl --inputs examples/inputs.example.json
+java -jar cromwell-92.jar run TB.wdl --inputs ~/inputs.example.json
 ```
 
 ## Recommended local Docker resources
@@ -153,7 +168,7 @@ CPUs:   8
 Memory: 16 GB or higher
 ```
 
-For larger datasets, especially when using Gubbins and IQ-TREE2, consider increasing memory and CPU allocation where possible.
+For larger datasets, especially when using Gubbins & IQ-TREE2, consider increasing memory & CPU allocation where possible.
 
 ## Main outputs
 
@@ -164,7 +179,7 @@ For larger datasets, especially when using Gubbins and IQ-TREE2, consider increa
 ▪ MultiQC report  
 ▪ Trimming summary table  
 
-### TB-Profiler and MTBC filtering
+### TB-Profiler & MTBC filtering
 
 ▪ TB-Profiler JSON outputs  
 ▪ Combined TB-Profiler HTML report  
@@ -184,112 +199,41 @@ For larger datasets, especially when using Gubbins and IQ-TREE2, consider increa
 
 ### Interactive reports
 
-▪ `integrated_tb_amr_mtbc_phylogenomics_report.html`  
-▪ `tbprofiler_combined_report.html`  
+▪ `integrated_report(s).html`  
+
 
 ## GitHub Pages report site
 
-This repository is prepared for GitHub Pages using the `docs/` folder.
-
-After deployment, the reports will be available at:
-
 ```text
 https://gmboowa.github.io/TB-AMR-MTBC-Phylogenomics/
 ```
 
-The `docs/index.html` file provides a card-style dashboard with links to the main reports.
-
-## How to publish the reports on GitHub Pages
-
-1. Push the repository to GitHub.
-2. Go to the repository page on GitHub.
-3. Open **Settings**.
-4. Open **Pages**.
-5. Under **Build and deployment**, set:
-
-```text
-Source: Deploy from a branch
-Branch: main
-Folder: /docs
-```
-
-6. Save the settings.
-7. Wait for GitHub Pages to build the site.
-8. Open:
-
-```text
-https://gmboowa.github.io/TB-AMR-MTBC-Phylogenomics/
-```
-
-## Updating reports after each workflow run
-
-After a successful workflow run, copy the new HTML reports and assets into the `docs/` folder:
-
-```bash
-mkdir -p docs/reports docs/assets
-
-cp /path/to/integrated_tb_amr_mtbc_phylogenomics_report.html docs/reports/
-cp /path/to/tbprofiler_combined_report.html docs/reports/
-
-# If your reports use external assets, copy them too:
-cp -R /path/to/report_assets/* docs/assets/
-```
-
-Then commit and push:
-
-```bash
-git add README.md TB_5.wdl examples/ docs/
-git commit -m "Add TB AMR MTBC phylogenomics workflow and reports site"
-git push origin main
-```
-
-## Suggested first GitHub commands
-
-```bash
-mkdir TB-AMR-MTBC-Phylogenomics
-cd TB-AMR-MTBC-Phylogenomics
-
-git init
-
-git add .
-git commit -m "Initial TB AMR MTBC phylogenomics workflow repository"
-
-git branch -M main
-git remote add origin https://github.com/gmboowa/TB-AMR-MTBC-Phylogenomics.git
-git push -u origin main
-```
 
 ## Interpretation guidance
 
 The integrated report should be interpreted using multiple layers of evidence:
 
 ▪ TB-Profiler resistance profile  
-▪ MTBC lineage and sub-lineage  
+▪ MTBC lineage & sub-lineage  
 ▪ Core-SNP phylogenetic clustering  
 ▪ Bootstrap support  
 ▪ Recombination-filtered alignment if Gubbins is enabled  
-▪ Metadata such as country, year, collection site, and sample source  
+▪ Metadata such as country, year, collection site & sample source  
 
-Close clustering alone should not be treated as proof of transmission without epidemiological and sampling context.
+Close clustering alone should not be treated as proof of transmission without epidemiological & sampling context.
 
 ## Suggested citation / acknowledgement
 
 If you use this workflow, please cite or acknowledge:
 
 ```text
-TB-AMR-MTBC-Phylogenomics: a WDL/Cromwell workflow for MTBC antimicrobial-resistance profiling and core-SNP phylogenomics.
+TB-AMR-MTBC-Phylogenomics: a WDL/Cromwell workflow for MTBC antimicrobial-resistance profiling & core-SNP phylogenomics.
 ```
 
 ## License
 
-Add an appropriate license before public release. Recommended options:
-
 ▪ MIT License for permissive open-source reuse  
-▪ Apache-2.0 License for permissive reuse with explicit patent language  
-▪ GPL-3.0 License if derivative workflows should remain open source  
 
-## Maintainer
 
-**Gerald Mboowa**  
 Senior Data Engineer, Broad Institute  
 Bioinformatics and genomic epidemiology implementation scientist
