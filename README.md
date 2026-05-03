@@ -34,19 +34,19 @@ Tree visualization + integrated HTML report
 
 ## Key features
 
-▪  Paired-end FASTQ input support  
-▪  Adapter trimming before downstream analysis  
-▪  FastQC & MultiQC quality-control reporting  
-▪  TB-Profiler-based drug-resistance prediction  
-▪  MTBC lineage & sub-lineage reporting  
-▪  MTBC-only filtering before phylogenomic reconstruction  
-▪  Snippy-based reference-guided variant calling  
-▪  Core-SNP alignment generation using Snippy-core  
-▪  Optional recombination filtering using Gubbins  
-▪  Maximum-likelihood phylogeny using IQ-TREE2  
-▪  Optional midpoint-rooted tree visualization  
-▪  Interactive HTML reports suitable for GitHub Pages  
-▪  Non-synonymous mutation reporting for key TB drug-resistance genes  
+- **⬤ Paired-end FASTQ input support**  
+- **⬤ Adapter trimming before downstream analysis**  
+- **⬤ FastQC & MultiQC quality-control reporting**  
+- **⬤ TB-Profiler-based drug-resistance prediction**  
+- **⬤ MTBC lineage & sub-lineage reporting**  
+- **⬤ MTBC-only filtering before phylogenomic reconstruction**  
+- **⬤ Snippy-based reference-guided variant calling**  
+- **⬤ Core-SNP alignment generation using Snippy-core**  
+- **⬤ Optional recombination filtering using Gubbins**  
+- **⬤ Maximum-likelihood phylogeny using IQ-TREE2**  
+- **⬤ Optional midpoint-rooted tree visualization**  
+- **⬤ Interactive HTML reports suitable for GitHub Pages**  
+- **⬤ Non-synonymous mutation reporting for key TB drug-resistance genes**
 
 ## Repository structure
 
