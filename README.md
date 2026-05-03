@@ -2,7 +2,7 @@
 
 A reproducible, containerized WDL/Cromwell workflow for *Mycobacterium tuberculosis* complex (MTBC) antimicrobial-resistance profiling & core-SNP phylogenomics.
 
-The workflow supports paired-end Illumina FASTQ inputs & produces quality-control summaries, TB-Profiler drug-resistance and lineage reports, MTBC-only sample filtering, Snippy-based core-SNP outputs, optional Gubbins recombination filtering, IQ-TREE2 maximum-likelihood phylogeny, tree visualization, and interactive HTML reports for GitHub Pages.
+The workflow supports paired-end Illumina FASTQ inputs & produces quality-control summaries, TB-Profiler drug-resistance and lineage reports, MTBC-only sample filtering, Snippy-based core-SNP outputs, optional Gubbins recombination filtering, IQ-TREE2 maximum-likelihood phylogeny, tree visualization & interactive HTML reports for GitHub Pages.
 
 
 ## Workflow overview
@@ -34,19 +34,19 @@ Tree visualization + integrated HTML report
 
 ## Key features
 
-▪ Paired-end FASTQ input support  
-▪ Adapter trimming before downstream analysis  
-▪ FastQC & MultiQC quality-control reporting  
-▪ TB-Profiler-based drug-resistance prediction  
-▪ MTBC lineage & sub-lineage reporting  
-▪ MTBC-only filtering before phylogenomic reconstruction  
-▪ Snippy-based reference-guided variant calling  
-▪ Core-SNP alignment generation using Snippy-core  
-▪ Optional recombination filtering using Gubbins  
-▪ Maximum-likelihood phylogeny using IQ-TREE2  
-▪ Optional midpoint-rooted tree visualization  
-▪ Interactive HTML reports suitable for GitHub Pages  
-▪ Non-synonymous mutation reporting for key TB drug-resistance genes  
+▪  Paired-end FASTQ input support  
+▪  Adapter trimming before downstream analysis  
+▪  FastQC & MultiQC quality-control reporting  
+▪  TB-Profiler-based drug-resistance prediction  
+▪  MTBC lineage & sub-lineage reporting  
+▪  MTBC-only filtering before phylogenomic reconstruction  
+▪  Snippy-based reference-guided variant calling  
+▪  Core-SNP alignment generation using Snippy-core  
+▪  Optional recombination filtering using Gubbins  
+▪  Maximum-likelihood phylogeny using IQ-TREE2  
+▪  Optional midpoint-rooted tree visualization  
+▪  Interactive HTML reports suitable for GitHub Pages  
+▪  Non-synonymous mutation reporting for key TB drug-resistance genes  
 
 ## Repository structure
 
@@ -234,6 +234,3 @@ TB-AMR-MTBC-Phylogenomics: a WDL/Cromwell workflow for MTBC antimicrobial-resist
 
 ▪ MIT License for permissive open-source reuse  
 
-
-Senior Data Engineer, Broad Institute  
-Bioinformatics and genomic epidemiology implementation scientist
