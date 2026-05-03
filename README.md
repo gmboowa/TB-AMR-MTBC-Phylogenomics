@@ -10,7 +10,7 @@ The workflow supports paired-end Illumina FASTQ inputs and produces quality-cont
 
 Why this name works:
 
-▪ It clearly communicates tuberculosis, antimicrobial resistance, MTBC, and phylogenomics.  
+▪ It clearly communicates tuberculosis, antimicrobial resistance, MTBC & phylogenomics.  
 ▪ It matches the WDL workflow name: `TB_AMR_MTBC_Phylogenomics`.  
 ▪ It is suitable for a GitHub Pages URL such as:  
 
@@ -22,23 +22,23 @@ https://gmboowa.github.io/TB-AMR-MTBC-Phylogenomics/
 
 ```text
 Paired-end FASTQ files
-⬇
+    ⬇
 Read trimming
-⬇
+    ⬇
 FastQC + MultiQC
-⬇
+    ⬇
 TB-Profiler AMR, species, and lineage profiling
-⬇
+    ⬇
 MTBC-only sample filtering
-⬇
+    ⬇
 Snippy per-sample variant calling
-⬇
+    ⬇
 Snippy-core alignment
-⬇
+    ⬇
 Optional Gubbins recombination filtering
-⬇
+    ⬇
 IQ-TREE2 maximum-likelihood phylogeny
-⬇
+    ⬇
 Tree visualization + integrated HTML report
 ```
 
