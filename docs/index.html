@@ -95,7 +95,7 @@
             alt="Mycobacterium tuberculosis image"
             loading="lazy">
         </div>
-        <div class="title">Mycobacterium tuberculosis — Training dataset 1 (May 2026)</div>
+        <div class="title">Mycobacterium tuberculosis — Training dataset (May 2026)</div>
         <div class="chips">
           <span class="chip"><strong>TB AMR + Phylogenomics report</strong></span>
         </div>
@@ -129,8 +129,10 @@
     // Live filter
     const q = document.getElementById('q');
     const cards = Array.from(document.querySelectorAll('#cards .card'));
+
     q.addEventListener('input', () => {
       const needle = q.value.trim().toLowerCase();
+
       cards.forEach(c => {
         const hay = c.dataset.name.toLowerCase();
         c.style.display = hay.includes(needle) ? '' : 'none';
@@ -141,13 +143,17 @@
     function setupFallback(id, candidates) {
       const img = document.getElementById(id);
       if (!img) return;
+
       const tried = new Set();
+
       function tryNext() {
         const next = candidates.find(u => !tried.has(u));
         if (!next) return;
+
         tried.add(next);
         img.src = next + (next.includes('?') ? '' : `?v=${Date.now()}`);
       }
+
       img.addEventListener('error', tryNext, { once: false });
     }
 
@@ -176,6 +182,7 @@
 
     (function initTheme(){
       const saved = localStorage.getItem('theme');
+
       if (saved === 'light' || saved === 'dark') {
         setTheme(saved);
       } else {
@@ -187,8 +194,12 @@
 
     themeBtn.addEventListener('click', () => {
       const current = root.getAttribute('data-theme');
-      if (current === 'dark') setTheme('light');
-      else setTheme('dark');
+
+      if (current === 'dark') {
+        setTheme('light');
+      } else {
+        setTheme('dark');
+      }
     });
   </script>
 </body>
