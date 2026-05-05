@@ -1,0 +1,5 @@
+version: 1.2
+workflows:
+  - name: TB_AMR_MTBC_Phylogenomics
+    subclass: WDL
+    primaryDescriptorPath: /TB.wdl
