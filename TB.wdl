@@ -1684,16 +1684,29 @@ try:
             ns["size"] = 0
             node.set_style(ns)
 
-            support = str(node.support).strip()
-            if support and support not in {"0", "0.0"}:
-                try:
-                    value = float(support)
-                    if value <= 1:
-                        value = value * 100
-                    support = str(int(round(value)))
-                except Exception:
-                    pass
+            support = ""
 
+            # Prefer original IQ-TREE internal node label if available.
+            # IQ-TREE with -alrt and -B may produce labels such as 95/100.
+            raw_name = str(getattr(node, "name", "") or "").strip()
+
+            if raw_name:
+                support = raw_name
+            else:
+                raw_support = str(getattr(node, "support", "") or "").strip()
+
+                # ETE3 may assign default internal-node support = 1.0.
+                # Do not convert this default to 100 unless it came from a real label.
+                if raw_support not in {"", "0", "0.0", "1", "1.0"}:
+                    try:
+                        value = float(raw_support)
+                        if 0 < value <= 1:
+                            value = value * 100
+                        support = str(int(round(value)))
+                    except Exception:
+                        support = raw_support
+
+            if support:
                 node.add_face(
                     TextFace(support, fsize=bootstrap_font, fgcolor="#b00000"),
                     column=0,
@@ -1740,6 +1753,7 @@ try:
         fh.write(f"Branch width: {branch_width}\n")
         fh.write(f"Branch vertical margin: {branch_vertical_margin}\n")
         fh.write(f"Right margin: {margin_right}\n")
+        fh.write("Bootstrap/support display: original IQ-TREE internal labels preferred; ETE3 default 1.0 skipped\n")
         fh.write("Susceptibility color key:\n")
         for label, hex_color in RESISTANCE_COLORS.items():
             fh.write(f"  {label}: {hex_color}\n")
