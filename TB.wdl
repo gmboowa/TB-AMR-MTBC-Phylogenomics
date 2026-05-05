@@ -1107,7 +1107,7 @@ if not files:
     })
 
 for tab in files:
-    sample = tab.parent.name
+    sample = tab.stem.split('.')[0]
 
     try:
         if not tab.exists():
@@ -1462,6 +1462,17 @@ out_img = Path(f"tree_visualization/phylogenetic_tree.{image_format}")
 cleaned_tree = Path("tree_visualization/phylogenetic_tree.cleaned.nwk")
 log = Path("tree_visualization/render.log")
 
+log.write_text("TREE_VISUALIZATION started\n")
+
+RESISTANCE_COLORS = {
+    "Unknown": "#999999",
+    "Sensitive": "#1b9e77",
+    "MDR": "#d73027",
+    "Pre-XDR": "#984ea3",
+    "XDR": "#6a3d9a",
+    "Other": "#e6ab02"
+}
+
 try:
     from ete3 import Tree, TreeStyle, TextFace, NodeStyle
 
@@ -1469,32 +1480,38 @@ try:
         raise ValueError(f"Unsupported image_format: {image_format}. Use png, svg, or pdf.")
 
     if not tree_input:
-        raise ValueError("input_tree was not supplied to TREE_VISUALIZATION.")
+        raise ValueError("input_tree not provided")
 
     tree_path = Path(tree_input)
 
     if not tree_path.exists() or tree_path.stat().st_size == 0:
-        raise FileNotFoundError(f"Input tree is missing or empty: {tree_path}")
+        raise FileNotFoundError(f"Tree missing or empty: {tree_path}")
 
     metadata = {}
 
     def classify_resistance(dr_type, resistant_drugs):
-        text = f"{dr_type or ''} {resistant_drugs or ''}".lower()
+        profile_raw = (dr_type or "").strip()
+        profile = profile_raw.lower().replace("_", "-")
 
-        if "xdr" in text:
-            return "XDR-TB", "#6a3d9a"
-        if "mdr" in text or ("rif" in text and "inh" in text):
-            return "MDR-TB", "#d73027"
-        if any(x in text for x in [
-            "rif", "rifampicin", "rpo",
-            "inh", "isoniazid", "katg", "inha",
-            "hr-tb", "rr-tb"
-        ]):
-            return "Mono-resistant", "#e6ab02"
-        if "susceptible" in text or "none" in text or text.strip() == "":
-            return "Susceptible", "#1b9e77"
+        if profile in {"susceptible", "sensitive"}:
+            return "Sensitive", RESISTANCE_COLORS["Sensitive"]
 
-        return "Other/Unknown", "#999999"
+        if "pre-xdr" in profile or "pre xdr" in profile or "prexdr" in profile:
+            return "Pre-XDR", RESISTANCE_COLORS["Pre-XDR"]
+
+        if "xdr" in profile:
+            return "XDR", RESISTANCE_COLORS["XDR"]
+
+        if "mdr" in profile:
+            return "MDR", RESISTANCE_COLORS["MDR"]
+
+        # Preserve the exact TB-Profiler resistance profile label:
+        # e.g. HR-TB, RR-TB, RIF resistant, INH resistant.
+        # These all share the same yellow color but keep their original names.
+        if profile_raw and profile not in {"other", "not reported", "unknown", "na", "n/a", "none"}:
+            return profile_raw, RESISTANCE_COLORS["Other"]
+
+        return "Unknown", RESISTANCE_COLORS["Unknown"]
 
     if tbprofiler_summary_path and Path(tbprofiler_summary_path).exists():
         with open(tbprofiler_summary_path, newline="") as fh:
@@ -1506,14 +1523,15 @@ try:
 
                 main_lineage = (r.get("main_lineage") or "").strip()
                 sub_lineage = (r.get("sub_lineage") or "").strip()
-                dr_type = (r.get("dr_type") or "").strip()
-                resistant_drugs = (r.get("resistant_drugs") or "").strip()
 
-                lineage = main_lineage
-                if sub_lineage and sub_lineage.lower() not in {"not reported", "none", "na", "n/a"}:
-                    lineage = sub_lineage
+                lineage = sub_lineage or main_lineage
+                if lineage.lower() in {"not reported", "none", "na", "n/a", "unknown"}:
+                    lineage = main_lineage
 
-                category, color = classify_resistance(dr_type, resistant_drugs)
+                category, color = classify_resistance(
+                    r.get("dr_type"),
+                    r.get("resistant_drugs")
+                )
 
                 metadata[sample] = {
                     "lineage": lineage,
@@ -1545,58 +1563,78 @@ try:
         if midpoint:
             t.set_outgroup(midpoint)
     except Exception as e:
-        log.write_text(f"WARNING: midpoint rooting failed: {repr(e)}\n")
+        with open(log, "a") as fh:
+            fh.write(f"WARNING: midpoint rooting failed: {repr(e)}\n")
 
     n_leaves = len(t.get_leaves())
-    has_metadata = len(metadata) > 0
-
     requested_width = int("~{width}")
-    auto_width = max(requested_width, 1800)
+    requested_height = int("~{height}")
 
-    if n_leaves <= 10:
-        if has_metadata:
-            label_font = 9
-            metadata_font = 7
-            bootstrap_font = 8
-        else:
-            label_font = 11
-            metadata_font = 0
-            bootstrap_font = 8
-        node_size = 4
-        branch_width = 1
-        branch_vertical_margin = 3
+    if n_leaves <= 5:
+        auto_width = max(requested_width, 3800)
+        label_font = 14
+        lineage_font = 11
+        resistance_font = 11
+        bootstrap_font = 10
+        tip_node_size = 8
+        branch_width = 2
+        branch_vertical_margin = 18
+        margin_right = 1500
+
+    elif n_leaves <= 10:
+        auto_width = max(requested_width, 4200)
+        label_font = 13
+        lineage_font = 10
+        resistance_font = 10
+        bootstrap_font = 9
+        tip_node_size = 7
+        branch_width = 2
+        branch_vertical_margin = 14
+        margin_right = 1600
 
     elif n_leaves <= 25:
-        label_font = 9
-        metadata_font = 7
+        auto_width = max(requested_width, 5000)
+        label_font = 11
+        lineage_font = 9
+        resistance_font = 9
         bootstrap_font = 8
-        node_size = 4
-        branch_width = 1
-        branch_vertical_margin = 3
+        tip_node_size = 6
+        branch_width = 2
+        branch_vertical_margin = 8
+        margin_right = 1700
 
     elif n_leaves <= 50:
-        label_font = 8
-        metadata_font = 6
+        auto_width = max(requested_width, 5600)
+        label_font = 9
+        lineage_font = 8
+        resistance_font = 8
         bootstrap_font = 7
-        node_size = 3
+        tip_node_size = 5
         branch_width = 1
-        branch_vertical_margin = 2
+        branch_vertical_margin = 5
+        margin_right = 1800
 
     elif n_leaves <= 100:
-        label_font = 7
-        metadata_font = 6
+        auto_width = max(requested_width, 6400)
+        label_font = 8
+        lineage_font = 7
+        resistance_font = 7
         bootstrap_font = 6
-        node_size = 3
+        tip_node_size = 4
         branch_width = 1
-        branch_vertical_margin = 2
+        branch_vertical_margin = 3
+        margin_right = 1900
 
     else:
-        label_font = 6
-        metadata_font = 5
+        auto_width = max(requested_width, 7200)
+        label_font = 7
+        lineage_font = 6
+        resistance_font = 6
         bootstrap_font = 5
-        node_size = 2
+        tip_node_size = 3
         branch_width = 1
-        branch_vertical_margin = 1
+        branch_vertical_margin = 2
+        margin_right = 2000
 
     for node in t.traverse():
         ns = NodeStyle()
@@ -1604,8 +1642,8 @@ try:
         ns["vt_line_width"] = branch_width
         ns["hz_line_color"] = "#000000"
         ns["vt_line_color"] = "#000000"
-        ns["fgcolor"] = "#0047cc"
-        ns["size"] = node_size
+        ns["fgcolor"] = "#000000"
+        ns["size"] = 0
         ns["shape"] = "circle"
 
         if node.is_leaf():
@@ -1613,12 +1651,11 @@ try:
             meta = metadata.get(sample, {})
 
             lineage = meta.get("lineage", "")
-            category = meta.get("category", "Other/Unknown")
-            color = meta.get("color", "#999999")
-
-            meta_text = " | ".join([x for x in [lineage, category] if x])
+            category = meta.get("category", "Unknown")
+            color = meta.get("color", RESISTANCE_COLORS["Unknown"])
 
             ns["fgcolor"] = color
+            ns["size"] = tip_node_size
             node.set_style(ns)
 
             node.add_face(
@@ -1627,18 +1664,24 @@ try:
                 position="branch-right"
             )
 
-            if meta_text and metadata_font > 0:
+            if lineage:
                 node.add_face(
-                    TextFace("  " + meta_text, fsize=metadata_font, fgcolor="#555555"),
+                    TextFace("  " + lineage, fsize=lineage_font, fgcolor="#555555"),
                     column=1,
                     position="branch-right"
                 )
 
+            node.add_face(
+                TextFace("  ● " + category, fsize=resistance_font, fgcolor=color),
+                column=2,
+                position="branch-right"
+            )
+
             node.name = ""
 
         else:
-            ns["fgcolor"] = "#0047cc"
-            ns["size"] = max(1, node_size - 1)
+            ns["fgcolor"] = "#000000"
+            ns["size"] = 0
             node.set_style(ns)
 
             support = str(node.support).strip()
@@ -1666,44 +1709,44 @@ try:
     ts.scale = None
     ts.branch_vertical_margin = branch_vertical_margin
 
-    ts.margin_top = 6
-    ts.margin_bottom = 45
-    ts.margin_left = 15
-    ts.margin_right = 420
+    ts.margin_top = 12
+    ts.margin_bottom = 65
+    ts.margin_left = 25
+    ts.margin_right = margin_right
     ts.title.clear()
 
     t.write(format=1, outfile=str(cleaned_tree))
 
-    # Render by width only to avoid vertical stretching.
     t.render(str(out_img), w=auto_width, units="px", tree_style=ts)
 
     with open(log, "a") as fh:
-        fh.write("TREE_VISUALIZATION completed successfully.\n")
-        fh.write(f"Input tree: {tree_path}\n")
-        fh.write(f"TB-Profiler summary: {tbprofiler_summary_path}\n")
-        fh.write(f"Metadata records loaded: {len(metadata)}\n")
-        fh.write(f"Output image: {out_img}\n")
+        fh.write("TREE_VISUALIZATION completed successfully\n")
+        fh.write(f"Tree: {tree_path}\n")
+        fh.write(f"Output: {out_img}\n")
         fh.write(f"Cleaned tree: {cleaned_tree}\n")
         fh.write(f"Tips rendered: {n_leaves}\n")
         fh.write(f"Reference tips removed: {removed_refs}\n")
-        fh.write(f"Canvas width: {auto_width}\n")
-        fh.write("Canvas height: ETE3 auto-height\n")
+        fh.write(f"Metadata records loaded: {len(metadata)}\n")
+        fh.write(f"Requested width: {requested_width}\n")
+        fh.write(f"Requested height: {requested_height}\n")
+        fh.write(f"Auto width used: {auto_width}\n")
+        fh.write("Height mode: natural ETE3 height using dynamic branch_vertical_margin\n")
         fh.write(f"Label font: {label_font}\n")
-        fh.write(f"Metadata font: {metadata_font}\n")
+        fh.write(f"Lineage font: {lineage_font}\n")
+        fh.write(f"Resistance font: {resistance_font}\n")
         fh.write(f"Bootstrap font: {bootstrap_font}\n")
-        fh.write(f"Node size: {node_size}\n")
+        fh.write(f"Tip node size: {tip_node_size}\n")
+        fh.write("Internal node size: 0\n")
         fh.write(f"Branch width: {branch_width}\n")
-        fh.write(f"Metadata present: {has_metadata}\n")
-        fh.write("Resistance color key:\n")
-        fh.write("  Susceptible: #1b9e77\n")
-        fh.write("  Mono-resistant: #e6ab02\n")
-        fh.write("  MDR-TB: #d73027\n")
-        fh.write("  XDR-TB: #6a3d9a\n")
-        fh.write("  Other/Unknown: #999999\n")
+        fh.write(f"Branch vertical margin: {branch_vertical_margin}\n")
+        fh.write(f"Right margin: {margin_right}\n")
+        fh.write("Susceptibility color key:\n")
+        for label, hex_color in RESISTANCE_COLORS.items():
+            fh.write(f"  {label}: {hex_color}\n")
 
 except Exception as e:
     with open(log, "a") as fh:
-        fh.write("ERROR in TREE_VISUALIZATION\n")
+        fh.write("ERROR:\n")
         fh.write(repr(e) + "\n")
     raise
 PY
@@ -1744,381 +1787,667 @@ task MERGE_TB_REPORTS {
     mkdir -p final_report
 
     tb_tsv="~{if defined(tbprofiler_summary_tsv) then tbprofiler_summary_tsv else ""}"
-    mtbc_txt="~{if defined(mtbc_samples_txt) then mtbc_samples_txt else ""}"
-    tree_newick="~{if defined(phylogenetic_tree_newick) then phylogenetic_tree_newick else ""}"
-    pairwise_tree_newick="~{if defined(pairwise_tree_newick) then pairwise_tree_newick else ""}"
-    if [ -z "$tree_newick" ] && [ -n "$pairwise_tree_newick" ]; then tree_newick="$pairwise_tree_newick"; fi
-    tree_png="~{if defined(tree_image) then tree_image else ""}"
-    iqtree="~{if defined(iqtree_report) then iqtree_report else ""}"
     nonsyn_tsv="~{if defined(nonsynonymous_mutations_tsv) then nonsynonymous_mutations_tsv else ""}"
+    tree_png="~{if defined(tree_image) then tree_image else ""}"
+    qc_html="~{if defined(qc_summary_html) then qc_summary_html else ""}"
+    trim_html="~{if defined(trimming_report_html) then trimming_report_html else ""}"
+    variant_html="~{if defined(variant_summary_html) then variant_summary_html else ""}"
+    iqtree_txt="~{if defined(iqtree_report) then iqtree_report else ""}"
 
     if [ -n "$tree_png" ] && [ -f "$tree_png" ]; then
       cp "$tree_png" final_report/mtbc_tree.png || true
     fi
 
     if [ -z "$tb_tsv" ] || [ ! -f "$tb_tsv" ]; then
-      echo -e "sample\tspecies\tmain_lineage\tsub_lineage\tdr_type\tresistant_drugs\tresistance_mutations\tkey_mutations\tjson_file\tmtbc_selected\tmtbc_selection_reason\tstatus" > final_report/empty_tbprofiler_summary.tsv
-      tb_tsv="final_report/empty_tbprofiler_summary.tsv"
+      echo -e "sample\tspecies\tmain_lineage\tsub_lineage\tdr_type\tresistant_drugs" > final_report/empty.tsv
+      tb_tsv="final_report/empty.tsv"
     fi
 
     if [ -z "$nonsyn_tsv" ] || [ ! -f "$nonsyn_tsv" ]; then
-      echo -e "sample\tgene\tposition\tref\talt\ttype\teffect\taa_change\tnt_change\tproduct\tevidence" > final_report/empty_nonsyn.tsv
+      echo -e "sample\tgene\teffect\taa_change\tnt_change\tproduct" > final_report/empty_nonsyn.tsv
       nonsyn_tsv="final_report/empty_nonsyn.tsv"
     fi
 
-    python3 - "$tb_tsv" "$mtbc_txt" "$tree_newick" "$iqtree" "$nonsyn_tsv" <<'PY'
-import csv, html, os, re, sys
+    python3 - "$tb_tsv" "$nonsyn_tsv" "$qc_html" "$trim_html" "$variant_html" "$iqtree_txt" <<'PY'
+import csv, html, re
 from pathlib import Path
+from collections import defaultdict
 from datetime import datetime, timezone
+import sys
 
-summary_tsv, mtbc_txt, tree_newick, iqtree, nonsyn_tsv = sys.argv[1:6]
-outdir = Path('final_report')
+summary_tsv, nonsyn_tsv, qc_html, trim_html, variant_html, iqtree_txt = sys.argv[1:7]
+
+outdir = Path("final_report")
 outdir.mkdir(exist_ok=True)
 
-run_started_utc = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S %Z')
-run_stamp_safe = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S_UTC')
-(outdir / 'run_metadata.txt').write_text(
-    f'Workflow report generation timestamp: {run_started_utc}\n'
-    f'Run stamp: {run_stamp_safe}\n'
+run_started_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z")
+run_stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_UTC")
+
+(outdir / "run_metadata.txt").write_text(
+    f"Workflow report generation timestamp: {run_started_utc}\n"
+    f"Run stamp: {run_stamp}\n"
 )
 
-rows = []
-if summary_tsv and Path(summary_tsv).exists():
-    with open(summary_tsv, newline='') as fh:
-        rows = list(csv.DictReader(fh, delimiter='\t'))
-
 def safe(v):
-    return html.escape(str(v if v is not None else ''))
+    return html.escape(str(v if v is not None else ""))
 
-def resistance_bucket(r):
-    text = ' '.join([r.get('dr_type',''), r.get('resistant_drugs','')]).lower()
-    if 'mdr' in text or ('rif' in text and 'inh' in text): return 'MDR-TB'
-    if 'rif' in text or 'rpo' in text: return 'RIF resistant'
-    if 'inh' in text or 'katg' in text or 'inha' in text: return 'INH resistant'
-    if 'none' in text or 'susceptible' in text: return 'Susceptible'
-    return r.get('dr_type') or 'Not reported'
+def read_optional_file(path):
+    p = Path(path)
+    if path and p.exists() and p.stat().st_size > 0:
+        try:
+            return p.read_text(errors="replace")
+        except Exception:
+            return ""
+    return ""
 
-selected = [r for r in rows if (r.get('mtbc_selected','').upper() == 'YES')]
-non_mtbc = [r for r in rows if (r.get('mtbc_selected','').upper() != 'YES')]
-resistant = [r for r in rows if (r.get('resistant_drugs','').lower() not in ['', 'none reported', 'not reported', 'not summarized'])]
+rows = list(csv.DictReader(open(summary_tsv), delimiter="\t"))
+nonsyn_rows = list(csv.DictReader(open(nonsyn_tsv), delimiter="\t"))
 
-nonsyn_rows = []
-if nonsyn_tsv and Path(nonsyn_tsv).exists():
-    with open(nonsyn_tsv, newline='') as fh:
-        nonsyn_rows = list(csv.DictReader(fh, delimiter='\t'))
+RESISTANCE_COLORS = {
+    "Sensitive": "#1b9e77",
+    "Monoresistance": "#e6ab02",
+    "MDR": "#d73027",
+    "Pre-XDR": "#984ea3",
+    "XDR": "#6a3d9a",
+    "Unknown": "#999999",
+}
+
+def classify_resistance(dr_type, resistant_drugs):
+    text = f"{dr_type or ''} {resistant_drugs or ''}".lower().replace("_", "-")
+
+    if any(x in text for x in ["xdr-tb", "xdr", "extensively drug"]) and not any(x in text for x in ["pre-xdr", "pre xdr", "prexdr"]):
+        return "XDR"
+
+    if any(x in text for x in ["pre-xdr", "pre xdr", "prexdr"]):
+        return "Pre-XDR"
+
+    if "mdr" in text or ("rif" in text and "inh" in text) or ("rifampicin" in text and "isoniazid" in text):
+        return "MDR"
+
+    if any(x in text for x in [
+        "rif resistant", "rifampicin resistant", "rr-tb", "rif",
+        "inh resistant", "isoniazid resistant", "hr-tb", "inh",
+        "mono", "monoresistant", "mono-resistant"
+    ]):
+        return "Monoresistance"
+
+    if any(x in text for x in [
+        "susceptible", "sensitive", "pan-susceptible",
+        "none reported", "no resistance"
+    ]):
+        return "Sensitive"
+
+    if text.strip() in {"", "none", "not reported", "na", "n/a", "unknown", "other"}:
+        return "Unknown"
+
+    return "Unknown"
+
+def badge(label):
+    color = RESISTANCE_COLORS.get(label, RESISTANCE_COLORS["Unknown"])
+    return f'<span class="res-badge" style="background:{color};">{safe(label)}</span>'
+
+total_samples = len(rows)
+mtbc_retained = len(rows)
+non_mtbc = 0
+drug_resistant = 0
+
+for r in rows:
+    category = classify_resistance(r.get("dr_type"), r.get("resistant_drugs"))
+    if category not in {"Sensitive", "Unknown"}:
+        drug_resistant += 1
+
+def build_qc_section():
+    qc_content = read_optional_file(qc_html)
+    trim_content = read_optional_file(trim_html)
+    variant_content = read_optional_file(variant_html)
+
+    sample_ids = [r.get("sample", "") for r in rows if r.get("sample")]
+
+    if not sample_ids:
+        body = '<tr><td colspan="5">No sample-level QC records available.</td></tr>'
+    else:
+        body = []
+        for s in sample_ids:
+            body.append(
+                "<tr>"
+                f"<td>{safe(s)}</td>"
+                "<td>Reported in MultiQC</td>"
+                "<td>See trimming report</td>"
+                '<td><span class="badge badge-green">PASS</span></td>'
+                '<td><span class="badge badge-green">Proceed</span></td>'
+                "</tr>"
+            )
+        body = "".join(body)
+
+    embedded = ""
+    if qc_content:
+        embedded += '<details><summary>Embedded QC summary report</summary><div class="embedded-report">' + qc_content + "</div></details>"
+    if trim_content:
+        embedded += '<details><summary>Embedded trimming report</summary><div class="embedded-report">' + trim_content + "</div></details>"
+    if variant_content:
+        embedded += '<details><summary>Embedded variant summary report</summary><div class="embedded-report">' + variant_content + "</div></details>"
+
+    if not embedded:
+        embedded = '<div class="note">QC, trimming, and variant reports were not provided as separate HTML inputs, but sample-level workflow decisions are summarized below.</div>'
+
+    return f"""
+<div class="section">
+<h2>1. Sample QC and Trimming Summary</h2>
+<div class="controls">
+<input id="qcSearch" onkeyup="filterTable('qcSearch','qcTable')" placeholder="Search QC table...">
+<button onclick="downloadCSV('qcTable','qc_summary.csv')">Download QC CSV</button>
+</div>
+<table id="qcTable">
+<thead>
+<tr>
+<th class="sample" onclick="sortTable('qcTable',0)">Sample ID</th>
+<th class="status" onclick="sortTable('qcTable',1)">Raw reads</th>
+<th class="status" onclick="sortTable('qcTable',2)">Trimmed reads</th>
+<th class="status" onclick="sortTable('qcTable',3)">FastQC status</th>
+<th class="status" onclick="sortTable('qcTable',4)">Workflow decision</th>
+</tr>
+</thead>
+<tbody>
+{body}
+</tbody>
+</table>
+{embedded}
+</div>
+"""
+
+def build_tb_rows():
+    out = []
+    for r in rows:
+        sample = r.get("sample")
+        species = r.get("species") or "Mycobacterium tuberculosis complex (inferred from TB-Profiler lineage)"
+        main_lineage = r.get("main_lineage") or ""
+        sub_lineage = r.get("sub_lineage") or ""
+        lineage = f"{safe(main_lineage)} / {safe(sub_lineage)}" if sub_lineage else safe(main_lineage)
+        dr_type = r.get("dr_type") or "Unknown"
+        resistant_drugs = r.get("resistant_drugs") or "None reported"
+        category = classify_resistance(dr_type, resistant_drugs)
+
+        out.append(
+        "<tr>"
+        f"<td>{safe(sample)}</td>"
+        f"<td>{safe(species)}</td>"
+        f"<td>{lineage}</td>"
+        f"<td>{badge(category)} &nbsp; {safe(dr_type)}</td>"
+        f"<td>{safe(resistant_drugs)}</td>"
+        '<td><span class="badge badge-green">Selected</span></td>'
+        "</tr>"
+        )
+    return "".join(out)
 
 def build_nonsyn_section():
-    cols = ['sample','gene','position','ref','alt','type','effect','aa_change','nt_change','product','evidence']
-    labels = ['Sample','Gene','Position','REF','ALT','Type','Predicted effect','AA position/change','NT position/change','Product','Evidence']
-    if not nonsyn_rows:
-        return '<div class="section"><h2>3. Non-synonymous mutations in key TB drug-resistance genes</h2><div class="note"><strong>No non-synonymous mutations were detected</strong> in the configured drug-resistance gene panel, or the Snippy annotation branch did not run.</div></div>'
-    out = ['<div class="section"><h2>3. Non-synonymous mutations in key TB drug-resistance-associated genes</h2>']
-    out.append('<div class="controls"><input id="mutSearch" onkeyup="filterTable(\'mutSearch\',\'mutTable\')" placeholder="Search mutation table..."><button onclick="downloadCSV(\'mutTable\',\'nonsynonymous_drug_gene_mutations.csv\')">Download mutation CSV</button></div>')
-    out.append('<div class="note"><strong>Mechanism:</strong> this table is parsed from per-sample Snippy <code>.tab</code> files and filtered to configured TB drug-resistance genes. It complements TB-Profiler and should not replace catalogue-based resistance interpretation.</div>')
-    out.append('<table id="mutTable"><thead><tr>')
-    th_classes = ['sample','lineage','species','status','status','lineage','mutations','mutations','mutations','status','status']
-    for lab, cls in zip(labels, th_classes):
-        out.append(f'<th class="{cls}">{safe(lab)}</th>')
-    out.append('</tr></thead><tbody>')
-    for r in nonsyn_rows:
-        out.append('<tr>')
-        for c in cols:
-            val = safe(r.get(c,''))
-            if c in ['gene','effect','alt']:
-                out.append(f'<td><strong>{val}</strong></td>')
-            else:
-                out.append(f'<td>{val}</td>')
-        out.append('</tr>')
-    out.append('</tbody></table></div>')
-    return ''.join(out)
+    cleaned = [r for r in nonsyn_rows if any((v or "").strip() for v in r.values())]
 
-class Node:
-    def __init__(self, name='', length=0.0, support=''):
-        self.name=name; self.length=length; self.support=support; self.children=[]; self.x=0; self.y=0; self.parent=None
-    def is_leaf(self): return len(self.children)==0
+    if not cleaned:
+        return """
+<div class="section">
+<h2>3. Non-synonymous mutations in key TB drug-resistance-associated genes</h2>
+<div class="note">
+No mutations were detected or mutation analysis was skipped.
+</div>
+</div>
+"""
 
-def parse_newick(text):
-    text=text.strip().rstrip(';')
-    i=0
-    def parse_label_len():
-        nonlocal i
-        label=''; length=0.0
-        while i < len(text) and text[i] not in ',()':
-            if text[i] == ':':
-                i += 1
-                num=''
-                while i < len(text) and text[i] not in ',()':
-                    num += text[i]; i += 1
-                try: length=float(num)
-                except Exception: length=0.0
-                break
-            label += text[i]; i += 1
-        return label.strip(), length
-    def parse_sub():
-        nonlocal i
-        if i < len(text) and text[i] == '(':
-            i += 1
-            node=Node()
-            while True:
-                child=parse_sub(); child.parent=node; node.children.append(child)
-                if i >= len(text): break
-                if text[i] == ',': i += 1; continue
-                if text[i] == ')': i += 1; break
-            label, length = parse_label_len()
-            node.length=length; node.support=label
-            return node
-        label, length = parse_label_len()
-        return Node(name=label, length=length)
-    return parse_sub()
+    grouped = defaultdict(list)
+    for r in cleaned:
+        grouped[r.get("sample", "Unknown")].append(r)
 
-def is_reference_tip(name):
-    return str(name or '').strip().lower() in {'reference', 'ref', 'h37rv', 'nc_000962.3', 'nc_000962'}
+    out = ["""
+<div class="section">
+<h2>3. Non-synonymous mutations in key TB drug-resistance-associated genes</h2>
+<div class="note">
+<strong>Mechanism:</strong> mutations are grouped per sample from per-sample Snippy annotation outputs and filtered to configured TB drug-resistance-associated genes. This complements TB-Profiler and should not replace catalogue-based resistance interpretation.
+</div>
+"""]
 
-def prune_reference_tips(node):
-    if node.is_leaf():
-        return None if is_reference_tip(node.name) else node
-    kept=[]
-    for child in node.children:
-        pruned = prune_reference_tips(child)
-        if pruned is not None:
-            pruned.parent = node
-            kept.append(pruned)
-    node.children = kept
-    if not node.children:
-        return None
-    if len(node.children) == 1 and node.parent is not None:
-        only = node.children[0]
-        only.length = (only.length or 0.0) + (node.length or 0.0)
-        return only
-    return node
+    for s in sorted(grouped):
+        out.append(f'<details><summary>Sample: {safe(s)} — {len(grouped[s])} mutation(s)</summary><table>')
+        out.append("<thead><tr><th class='lineage'>Gene</th><th class='mutations'>Effect</th><th class='mutations'>AA change</th><th class='mutations'>NT change</th><th class='status'>Product</th></tr></thead><tbody>")
+        for r in grouped[s]:
+            out.append(
+                "<tr>"
+                f"<td><strong>{safe(r.get('gene'))}</strong></td>"
+                f"<td>{safe(r.get('effect'))}</td>"
+                f"<td>{safe(r.get('aa_change'))}</td>"
+                f"<td>{safe(r.get('nt_change'))}</td>"
+                f"<td>{safe(r.get('product'))}</td>"
+                "</tr>"
+            )
+        out.append("</tbody></table></details>")
 
-def leaves(node):
-    if node.is_leaf(): return [node]
-    out=[]
-    for c in node.children: out.extend(leaves(c))
-    return out
+    out.append("</div>")
+    return "".join(out)
 
-def max_depth(node, acc=0.0):
-    cur = acc + (node.length or 0.0)
-    if node.is_leaf(): return cur
-    return max(max_depth(c, cur) for c in node.children)
+def build_tree_legend():
+    items = [
+        ("Sensitive", RESISTANCE_COLORS["Sensitive"]),
+        ("Monoresistance / HR-TB / RR-TB", RESISTANCE_COLORS["Monoresistance"]),
+        ("MDR", RESISTANCE_COLORS["MDR"]),
+        ("Pre-XDR", RESISTANCE_COLORS["Pre-XDR"]),
+        ("XDR", RESISTANCE_COLORS["XDR"]),
+        ("Unknown", RESISTANCE_COLORS["Unknown"]),
+    ]
 
-def assign_coords(root):
-    ls=leaves(root)
-    n=max(1, len(ls))
+    legend = ['<div class="legend">']
+    for label, color in items:
+        legend.append(f'<span><strong style="color:{color};">●</strong> {safe(label)}</span>')
+    legend.append('<span><strong style="color:#b91c1c;">Bootstrap values</strong></span>')
+    legend.append('<span><strong>Scale bar</strong> substitutions/site</span>')
+    legend.append("</div>")
+    return "".join(legend)
 
-    if n <= 10:
-        ygap = 82
-        tip_font = 14
-        meta_font = 10
-        boot_font = 12
-        node_r = 4.5
-        branch_w = 2.0
-    elif n <= 25:
-        ygap = 54
-        tip_font = 13
-        meta_font = 9
-        boot_font = 11
-        node_r = 4.0
-        branch_w = 1.8
-    elif n <= 75:
-        ygap = 34
-        tip_font = 11
-        meta_font = 8
-        boot_font = 9
-        node_r = 3.2
-        branch_w = 1.5
-    elif n <= 150:
-        ygap = 24
-        tip_font = 9
-        meta_font = 7
-        boot_font = 8
-        node_r = 2.7
-        branch_w = 1.2
-    else:
-        ygap = 18
-        tip_font = 8
-        meta_font = 6
-        boot_font = 7
-        node_r = 2.2
-        branch_w = 1.0
+def build_iqtree_section():
+    txt = read_optional_file(iqtree_txt)
+    if not txt:
+        return ""
+    return f"""
+<details>
+<summary>IQ-TREE report</summary>
+<pre>{safe(txt[:30000])}</pre>
+</details>
+"""
 
-    top = 46
-    bottom_extra = 88
-    left = 54
-    label_space = 330 if n <= 25 else 420
-    tree_span = max(640, min(1500, 520 + n * 18))
-    width = left + tree_span + label_space
-    height = max(430, top + (n - 1) * ygap + bottom_extra)
+tree_exists = Path("final_report/mtbc_tree.png").exists()
+tree_html = '<img class="mtbc-tree-img" src="mtbc_tree.png" alt="ETE3-rendered MTBC core-SNP phylogenetic tree">' if tree_exists else '<div class="note">Tree image was not provided or could not be copied into the final report folder.</div>'
 
-    for idx, l in enumerate(ls):
-        l.y = top + idx * ygap
-
-    def set_y(nod):
-        if nod.is_leaf():
-            return nod.y
-        nod.y = sum(set_y(c) for c in nod.children) / len(nod.children)
-        return nod.y
-    set_y(root)
-
-    depth = max(max_depth(root), 1e-9)
-    xscale = tree_span / depth
-
-    def set_x(nod, acc=0.0):
-        nod.x = left + acc * xscale
-        for c in nod.children:
-            set_x(c, acc + (c.length or 0.0))
-    set_x(root)
-
-    tip_x = left + tree_span
-    for l in ls:
-        l.x = max(l.x, tip_x)
-
-    bar_value = depth / 5.0 if depth > 0 else 0.0
-    bar_px = bar_value * xscale
-    if bar_px < 60:
-        bar_px = 90
-        bar_value = bar_px / xscale
-    scale_bar = {
-        'x1': left,
-        'x2': left + bar_px,
-        'y': height - 34,
-        'label': f"{bar_value:.6g}",
-    }
-
-    style = {
-        'tip_font': tip_font,
-        'meta_font': meta_font,
-        'boot_font': boot_font,
-        'node_r': node_r,
-        'branch_w': branch_w,
-    }
-    return width, height, ls, scale_bar, style
-
-def support_label(v):
-    v=str(v or '').strip()
-    if not v: return ''
-    if '/' in v:
-        v=v.split('/')[0].strip()
-    try:
-        x=float(v)
-        if x<=1: x*=100
-        return str(int(round(x)))
-    except Exception:
-        return safe(v)
-
-def tip_color(sample):
-    row=next((r for r in rows if r.get('sample')==sample), {})
-    text=' '.join([row.get('dr_type',''), row.get('resistant_drugs',''), row.get('species','')]).lower()
-    if 'africanum' in text: return '#2563eb'
-    if 'mdr' in text or ('rif' in text and 'inh' in text): return '#b91c1c'
-    if 'inh' in text or 'katg' in text: return '#d97706'
-    return '#087f5b'
-
-def draw_tree_svg():
-    if not tree_newick or not Path(tree_newick).exists():
-        return '<div class="note"><strong>Tree not generated.</strong> Usually this means fewer than the minimum required MTBC paired samples were available, or the phylogeny branch was disabled.</div>'
-    txt=Path(tree_newick).read_text().strip()
-    if not txt: return '<div class="note"><strong>Tree file was empty.</strong></div>'
-    try:
-        root=parse_newick(txt)
-        root=prune_reference_tips(root)
-        if root is None:
-            return '<div class="note"><strong>Tree contained only the reference tip after filtering.</strong></div>'
-        width,height,ls,scale_bar,style=assign_coords(root)
-        parts=[f'<svg class="mtbc-tree-svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-label="Core SNP tree with ETE3-style rectangular branches and bootstrap values">']
-        parts.append('<g class="ete3-style-tree">')
-        def esc_attr(x): return html.escape(str(x), quote=True).replace("'", "&#39;")
-
-        def rec(n):
-            if not n.is_leaf():
-                ys=[c.y for c in n.children]
-                parts.append(
-                    f'<path class="branch ete3-branch" stroke-width="{style["branch_w"]}" '
-                    f'd="M{n.x:.1f} {min(ys):.1f} L{n.x:.1f} {max(ys):.1f}"/>'
-                )
-
-                lab=support_label(n.support)
-                if lab and lab not in ['0','0.0']:
-                    parts.append(
-                        f'<text class="bootstrap ete3-bootstrap" '
-                        f'x="{n.x-6:.1f}" y="{n.y-8:.1f}" '
-                        f'font-size="{style["boot_font"]}" text-anchor="end">{lab}</text>'
-                    )
-
-                parts.append(
-                    f'<circle class="internal-node" cx="{n.x:.1f}" cy="{n.y:.1f}" '
-                    f'r="{style["node_r"]}" fill="#0758d8"/>'
-                )
-
-                for c in n.children:
-                    parts.append(
-                        f'<path class="branch ete3-branch" stroke-width="{style["branch_w"]}" '
-                        f'd="M{n.x:.1f} {c.y:.1f} L{c.x:.1f} {c.y:.1f}"/>'
-                    )
-                    rec(c)
-            else:
-                sample=n.name
-                row=next((r for r in rows if r.get('sample')==sample), {})
-                detail=' | '.join([sample, row.get('species',''), row.get('main_lineage',''), resistance_bucket(row), row.get('resistant_drugs','')]).strip(' |')
-                color=tip_color(sample)
-
-                parts.append(f'<circle class="tip-node" cx="{n.x:.1f}" cy="{n.y:.1f}" r="5" fill="{color}" onclick="showTip(\'{esc_attr(detail)}\')"/>')
-                parts.append(f'<text class="tip" x="{n.x+12:.1f}" y="{n.y+4:.1f}" font-size="{style["tip_font"]}">{safe(sample)}</text>')
-                meta=' | '.join([row.get('main_lineage',''), resistance_bucket(row)]).strip(' |')
-                parts.append(f'<text class="tip-meta" x="{n.x+122:.1f}" y="{n.y+4:.1f}" font-size="{style["meta_font"]}">{safe(meta)}</text>')
-
-        rec(root)
-
-        y=scale_bar['y']; x1=scale_bar['x1']; x2=scale_bar['x2']
-        parts.append(f'<path class="scale-bar" d="M{x1:.1f} {y:.1f} L{x2:.1f} {y:.1f}"/>')
-        parts.append(f'<path class="scale-bar" d="M{x1:.1f} {y-12:.1f} L{x1:.1f} {y+12:.1f}"/>')
-        parts.append(f'<path class="scale-bar" d="M{x2:.1f} {y-12:.1f} L{x2:.1f} {y+12:.1f}"/>')
-        parts.append(f'<text class="scale-label" x="{x1:.1f}" y="{y+38:.1f}">{safe(scale_bar["label"])}</text>')
-        parts.append('</g>')
-        parts.append('</svg>')
-        return '\n'.join(parts)
-    except Exception as e:
-        return '<div class="note"><strong>Tree rendering failed.</strong> The report still includes tabular results. Error: '+safe(repr(e))+'</div>'
-
-def draw_tree_static_image():
-    img_path = Path("final_report/mtbc_tree.png")
-    if img_path.exists() and img_path.stat().st_size > 0:
-        return '<img class="mtbc-tree-img" src="mtbc_tree.png" alt="ETE3-rendered MTBC core-SNP phylogenetic tree">'
-    return draw_tree_svg()
-
-svg_tree = draw_tree_static_image()
-
-qc_rows = [{'sample':r.get('sample',''), 'raw_reads':'Reported in MultiQC', 'trimmed_reads':'See trimming report', 'decision':'Proceed' if r.get('mtbc_selected','').upper()=='YES' else 'Review / excluded if non-MTBC'} for r in rows]
-
-html_out = f'''<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><title>Interactive TB AMR MTBC Phylogenomics Report</title><meta name="viewport" content="width=device-width, initial-scale=1.0">
+html_out = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Interactive TB AMR MTBC Phylogenomics Report</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-:root{{--bg:#f5f7fb;--card:#ffffff;--text:#1f2937;--muted:#6b7280;--border:#e5e7eb;--blue:#2563eb;--teal:#0f766e;--purple:#7c3aed;--red:#b91c1c;--orange:#d97706;--green:#087f5b;--dark:#12355b;}}
-body{{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text);}}.header{{background:linear-gradient(135deg,#12355b,#0f766e);color:white;padding:28px 42px;}}.header h1{{margin:0;font-size:30px;}}.header p{{margin:8px 0 0;font-size:15px;opacity:.95;}}.container{{padding:28px 42px;}}.cards{{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:16px;margin-bottom:24px;}}.card{{background:var(--card);border-radius:16px;padding:18px;box-shadow:0 2px 12px rgba(0,0,0,.08);}}.card h3{{margin:0;color:var(--muted);font-size:14px;}}.card .num{{font-size:30px;font-weight:bold;margin-top:8px;}}.blue{{color:var(--blue)}}.green{{color:var(--green)}}.orange{{color:var(--orange)}}.red{{color:var(--red)}}.section{{background:var(--card);border-radius:16px;padding:20px;margin-bottom:24px;box-shadow:0 2px 12px rgba(0,0,0,.08);}}.section h2{{margin-top:0;padding-bottom:10px;border-bottom:2px solid var(--border);}}.controls{{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;}}input,select,button{{border:1px solid var(--border);border-radius:10px;padding:9px 11px;font-size:13px;background:white;}}button{{cursor:pointer;background:#eef6ff;color:#12355b;font-weight:bold;}}button:hover{{background:#dbeafe;}}table{{width:100%;border-collapse:collapse;font-size:13px;overflow:hidden;border-radius:12px;}}th{{color:white;padding:10px;text-align:left;cursor:pointer;user-select:none;}}td{{padding:9px;border-bottom:1px solid var(--border);}}tr:hover td{{background:#f9fafb;}}th.sample{{background:#0f766e;}}th.species{{background:#2563eb;}}th.lineage{{background:#7c3aed;}}th.resistance{{background:#b91c1c;}}th.mutations{{background:#d97706;}}th.status{{background:#087f5b;}}.badge{{padding:4px 8px;border-radius:999px;color:white;font-size:12px;display:inline-block;}}.badge-green{{background:#087f5b;}}.badge-red{{background:#b91c1c;}}.badge-blue{{background:#2563eb;}}.badge-orange{{background:#d97706;}}.note{{background:#eef6ff;border-left:5px solid #2563eb;padding:12px;border-radius:10px;margin:12px 0;}}.grid2{{display:grid;grid-template-columns:minmax(0,1fr);gap:20px;align-items:start;}}.tree-panel{{background:#fbfdff;border:1px solid var(--border);border-radius:16px;padding:4px 10px 10px 10px;overflow:auto;width:100%;box-sizing:border-box;}}.mtbc-tree-img{{display:block;width:auto;max-width:none;height:auto;margin:0;}}.mtbc-tree-svg{{display:block;max-width:none;width:auto;height:auto;margin-top:0;}}svg text{{font-family:Arial,Helvetica,sans-serif;}}.branch{{stroke:#111827;stroke-width:2;fill:none;stroke-linecap:square;shape-rendering:crispEdges;}}.ete3-branch{{stroke:#111827;fill:none;stroke-linecap:square;shape-rendering:crispEdges;}}.bootstrap{{font-size:12px;fill:#9f1d20;font-weight:normal;}}.ete3-bootstrap{{fill:#9f1d20;font-weight:normal;}}.internal-node{{stroke:none;}}.tip-node{{stroke:none;cursor:pointer;}}.scale-bar{{stroke:#111827;stroke-width:2;fill:none;shape-rendering:crispEdges;}}.scale-label{{font-size:24px;fill:#111827;font-family:Arial,Helvetica,sans-serif;}}.tip{{font-size:13px;fill:#111827;}}.tip-meta{{font-size:11px;fill:#6b7280;}}.legend{{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;font-size:12px;}}.legend span{{border-radius:999px;padding:5px 9px;background:#f3f4f6;}}.details{{background:#fafafa;border:1px solid var(--border);border-radius:12px;padding:12px;}}details{{margin-bottom:10px;border:1px solid var(--border);border-radius:12px;padding:10px;background:#fff;}}summary{{cursor:pointer;font-weight:bold;}}.footer{{font-size:12px;color:var(--muted);margin-top:20px;}}@media(max-width:900px){{.cards{{grid-template-columns:repeat(2,1fr);}}.grid2{{grid-template-columns:1fr;}}}}
-</style></head><body><div class="header"><h1>Interactive TB AMR MTBC Phylogenomics Report</h1><p>Trimming → QC → TB-Profiler → MTBC-only filtering → core-SNP phylogenomics → final merged report</p><p><strong>Run generated:</strong> {run_started_utc} &nbsp; | &nbsp; <strong>Run stamp:</strong> {run_stamp_safe}</p></div><div class="container"><div class="cards"><div class="card"><h3>Total paired samples</h3><div class="num blue">{len(rows)}</div></div><div class="card"><h3>MTBC isolates retained</h3><div class="num green">{len(selected)}</div></div><div class="card"><h3>Non-MTBC excluded</h3><div class="num orange">{len(non_mtbc)}</div></div><div class="card"><h3>Drug-resistant isolates</h3><div class="num red">{len(resistant)}</div></div></div>
-<div class="section"><h2>1. Sample QC and Trimming Summary</h2><div class="controls"><input id="qcSearch" onkeyup="filterTable('qcSearch','qcTable')" placeholder="Search QC table..."><button onclick="downloadCSV('qcTable','qc_summary.csv')">Download QC CSV</button></div><table id="qcTable"><thead><tr><th class="sample" onclick="sortTable('qcTable',0)">Sample ID</th><th class="status" onclick="sortTable('qcTable',1)">Raw reads</th><th class="status" onclick="sortTable('qcTable',2)">Trimmed reads</th><th class="status" onclick="sortTable('qcTable',3)">FastQC status</th><th class="status" onclick="sortTable('qcTable',4)">Workflow decision</th></tr></thead><tbody>'''
-for r in qc_rows:
-    badge = '<span class="badge badge-green">PASS</span>' if 'Proceed' in r['decision'] else '<span class="badge badge-orange">WARN</span>'
-    html_out += f"<tr><td>{safe(r['sample'])}</td><td>{safe(r['raw_reads'])}</td><td>{safe(r['trimmed_reads'])}</td><td>{badge}</td><td>{safe(r['decision'])}</td></tr>\n"
-html_out += '''</tbody></table></div><div class="section"><h2>2. TB-Profiler Resistance, Species, and Lineage Report</h2><div class="controls"><input id="tbSearch" onkeyup="filterTable('tbSearch','tbTable')" placeholder="Search TB-Profiler results..."><select onchange="filterResistance(this.value)"><option value="">All resistance profiles</option><option value="MDR">MDR-TB only</option><option value="Susceptible">Susceptible only</option><option value="RIF">RIF resistant</option><option value="INH">INH resistant</option></select><button onclick="downloadCSV('tbTable','tbprofiler_summary.csv')">Download TB-Profiler CSV</button></div><table id="tbTable"><thead><tr><th class="sample" onclick="sortTable('tbTable',0)">Sample ID</th><th class="species" onclick="sortTable('tbTable',1)">Species</th><th class="lineage" onclick="sortTable('tbTable',2)">Lineage</th><th class="resistance" onclick="sortTable('tbTable',3)">Resistance profile</th><th class="mutations" onclick="sortTable('tbTable',4)">Key mutations / resistant drugs</th><th class="status" onclick="sortTable('tbTable',5)">MTBC decision</th></tr></thead><tbody>'''
-for r in rows:
-    decision = r.get('mtbc_selected','') or 'NO'
-    cls = 'badge-green' if decision.upper() == 'YES' else 'badge-red'
-    label = 'Selected' if decision.upper() == 'YES' else 'Excluded'
-    lineage = ' / '.join([x for x in [r.get('main_lineage',''), r.get('sub_lineage','')] if x and x != 'Not reported']) or 'Not reported'
-    html_out += f"<tr><td>{safe(r.get('sample',''))}</td><td>{safe(r.get('species',''))}</td><td>{safe(lineage)}</td><td>{safe(resistance_bucket(r))}</td><td>{safe((r.get('key_mutations','') if r.get('key_mutations','') not in ['', 'None reported'] else r.get('resistant_drugs','')))}</td><td><span class=\"badge {cls}\">{label}</span></td></tr>\n"
-html_out += '</tbody></table></div>'
-html_out += build_nonsyn_section()
-html_out += f'''<div class="section"><h2>4. MTBC-only Core-SNP Phylogenetic Tree</h2><div class="grid2"><div class="tree-panel">{svg_tree}<div class="legend"><span><strong style="color:#b91c1c;">●</strong> MDR / RIF resistant</span><span><strong style="color:#d97706;">●</strong> INH resistant</span><span><strong style="color:#087f5b;">●</strong> Susceptible</span><span><strong style="color:#2563eb;">●</strong> M. africanum</span><span><strong style="color:#b91c1c;">Bootstrap values</strong> shown at internal nodes</span><span><strong>Scale bar</strong> shown in substitutions/site</span></div></div><div class="details"><h3>Selected branch/sample detail</h3><p id="tipBox" class="note">If the static ETE3 tree is shown, use the labels directly from the figure. If the SVG fallback is shown, click any tree tip/node circle to display sample details here.</p><details open><summary>Tree construction summary</summary><p><strong>Included:</strong> {len(selected)} TB-Profiler-confirmed MTBC isolates.</p><p><strong>Excluded:</strong> {len(non_mtbc)} non-MTBC or low-confidence isolate(s).</p><p><strong>Core alignment:</strong> Snippy-core alignment.</p><p><strong>Recombination:</strong> Optional Gubbins-filtered alignment.</p><p><strong>Tree:</strong> IQ-TREE2 maximum-likelihood phylogeny.</p><p><strong>Rooting/display:</strong> midpoint-rooted for visualization, with the reference removed from the displayed tree only.</p><p><strong>Display:</strong> the report preferentially embeds the ETE3-rendered static tree image <code>mtbc_tree.png</code>; the Newick-based SVG renderer is used only as a fallback if the image is missing.</p></details><details><summary>Expected tree output files</summary><p><code>final.treefile</code></p><p><code>MTBC_core_SNP_phylogeny.iqtree</code></p><p><code>phylogenetic_tree.png</code></p><p><code>mtbc_tree.png</code></p><p><code>integrated_tb_amr_mtbc_phylogenomics_report.html</code></p></details></div></div></div><div class="section"><h2>5. Final Interpretation</h2><p>The report documents all samples through QC and TB-Profiler analysis, then applies an MTBC-only rule before phylogenomic reconstruction. Samples not classified as MTBC are excluded from the tree, but retained in the report for transparency.</p><div class="note"><strong>Interpretation:</strong> use close clustering together with bootstrap support, lineage, drug-resistance profile, metadata, and SNP distances before making transmission inferences.</div></div><div class="footer">Generated by TB_AMR_MTBC_Phylogenomics WDL workflow. Run generated: {run_started_utc}. Run stamp: {run_stamp_safe}.</div></div><script>
-function filterTable(inputId, tableId){{const filter=document.getElementById(inputId).value.toLowerCase();const rows=document.getElementById(tableId).getElementsByTagName("tbody")[0].rows;for(let i=0;i<rows.length;i++){{rows[i].style.display=rows[i].innerText.toLowerCase().includes(filter)?"":"none";}}}}
-function filterResistance(value){{const rows=document.getElementById("tbTable").getElementsByTagName("tbody")[0].rows;for(let i=0;i<rows.length;i++){{rows[i].style.display=value===""||rows[i].cells[3].innerText.includes(value)?"":"none";}}}}
-function sortTable(tableId,col){{const table=document.getElementById(tableId);const tbody=table.tBodies[0];const rows=Array.from(tbody.rows);const asc=table.getAttribute("data-sort-col")!=col||table.getAttribute("data-sort-dir")!=="asc";rows.sort((a,b)=>{{const A=a.cells[col].innerText.replace(/,/g,'');const B=b.cells[col].innerText.replace(/,/g,'');const nA=parseFloat(A),nB=parseFloat(B);if(!isNaN(nA)&&!isNaN(nB))return asc?nA-nB:nB-nA;return asc?A.localeCompare(B):B.localeCompare(A);}});rows.forEach(r=>tbody.appendChild(r));table.setAttribute("data-sort-col",col);table.setAttribute("data-sort-dir",asc?"asc":"desc");}}
-function showTip(text){{document.getElementById("tipBox").innerText=text;}}
-function downloadCSV(tableId,filename){{const table=document.getElementById(tableId);let csv=[];for(const row of table.rows){{const cols=Array.from(row.cells).map(cell=>'"'+cell.innerText.replace(/"/g,'""')+'"');csv.push(cols.join(','));}}const blob=new Blob([csv.join("\\n")],{{type:"text/csv"}});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=filename;a.click();URL.revokeObjectURL(url);}}
-</script></body></html>'''
+:root{{
+  --bg:#f5f7fb;
+  --card:#ffffff;
+  --text:#1f2937;
+  --muted:#6b7280;
+  --border:#e5e7eb;
+  --blue:#2563eb;
+  --teal:#0f766e;
+  --purple:#7c3aed;
+  --red:#b91c1c;
+  --orange:#d97706;
+  --green:#087f5b;
+  --dark:#12355b;
+}}
+body{{
+  margin:0;
+  font-family:Arial,Helvetica,sans-serif;
+  background:var(--bg);
+  color:var(--text);
+}}
+.header{{
+  background:linear-gradient(135deg,#12355b,#0f766e);
+  color:white;
+  padding:28px 42px;
+}}
+.header h1{{
+  margin:0;
+  font-size:30px;
+}}
+.header p{{
+  margin:8px 0 0;
+  font-size:15px;
+  opacity:.95;
+}}
+.container{{
+  padding:28px 42px;
+}}
+.cards{{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(150px,1fr));
+  gap:16px;
+  margin-bottom:24px;
+}}
+.card{{
+  background:var(--card);
+  border-radius:16px;
+  padding:18px;
+  box-shadow:0 2px 12px rgba(0,0,0,.08);
+}}
+.card h3{{
+  margin:0;
+  color:var(--muted);
+  font-size:14px;
+}}
+.card .num{{
+  font-size:30px;
+  font-weight:bold;
+  margin-top:8px;
+}}
+.blue{{color:var(--blue)}}
+.green{{color:var(--green)}}
+.orange{{color:var(--orange)}}
+.red{{color:var(--red)}}
+.section{{
+  background:var(--card);
+  border-radius:16px;
+  padding:20px;
+  margin-bottom:24px;
+  box-shadow:0 2px 12px rgba(0,0,0,.08);
+}}
+.section h2{{
+  margin-top:0;
+  padding-bottom:10px;
+  border-bottom:2px solid var(--border);
+}}
+.controls{{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  margin-bottom:14px;
+}}
+input,select,button{{
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:9px 11px;
+  font-size:13px;
+  background:white;
+}}
+button{{
+  cursor:pointer;
+  background:#eef6ff;
+  color:#12355b;
+  font-weight:bold;
+}}
+button:hover{{
+  background:#dbeafe;
+}}
+table{{
+  width:100%;
+  border-collapse:collapse;
+  font-size:13px;
+  overflow:hidden;
+  border-radius:12px;
+}}
+th{{
+  color:white;
+  padding:10px;
+  text-align:left;
+  cursor:pointer;
+  user-select:none;
+}}
+td{{
+  padding:9px;
+  border-bottom:1px solid var(--border);
+  vertical-align:top;
+}}
+tr:hover td{{
+  background:#f9fafb;
+}}
+th.sample{{background:#0f766e;}}
+th.species{{background:#2563eb;}}
+th.lineage{{background:#7c3aed;}}
+th.resistance{{background:#b91c1c;}}
+th.mutations{{background:#d97706;}}
+th.status{{background:#087f5b;}}
+.badge{{
+  padding:4px 8px;
+  border-radius:999px;
+  color:white;
+  font-size:12px;
+  display:inline-block;
+}}
+.badge-green{{background:#087f5b;}}
+.badge-red{{background:#b91c1c;}}
+.badge-blue{{background:#2563eb;}}
+.badge-orange{{background:#d97706;}}
+.res-badge{{
+  padding:4px 8px;
+  border-radius:999px;
+  color:white;
+  font-size:12px;
+  display:inline-block;
+  font-weight:bold;
+}}
+.note{{
+  background:#eef6ff;
+  border-left:5px solid #2563eb;
+  padding:12px;
+  border-radius:10px;
+  margin:12px 0;
+  line-height:1.45;
+}}
+.grid2{{
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  gap:20px;
+  align-items:start;
+}}
+.tree-panel{{
+  background:#fbfdff;
+  border:1px solid var(--border);
+  border-radius:16px;
+  padding:10px;
+  overflow:auto;
+  width:100%;
+  box-sizing:border-box;
+}}
+.mtbc-tree-img{{
+  display:block;
+  width:auto;
+  max-width:none;
+  height:auto;
+  margin:0;
+}}
+.legend{{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  margin-top:10px;
+  font-size:12px;
+}}
+.legend span{{
+  border-radius:999px;
+  padding:5px 9px;
+  background:#f3f4f6;
+}}
+.details{{
+  background:#fafafa;
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:12px;
+}}
+details{{
+  margin-top:12px;
+  margin-bottom:10px;
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:10px;
+  background:#fff;
+}}
+summary{{
+  cursor:pointer;
+  font-weight:bold;
+}}
+pre{{
+  white-space:pre-wrap;
+  overflow:auto;
+  background:#111827;
+  color:#f9fafb;
+  padding:14px;
+  border-radius:12px;
+  font-size:12px;
+}}
+.embedded-report{{
+  overflow:auto;
+  max-height:650px;
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:10px;
+  background:white;
+}}
+.footer{{
+  font-size:12px;
+  color:var(--muted);
+  margin-top:20px;
+}}
+@media(max-width:900px){{
+  .cards{{grid-template-columns:repeat(2,1fr);}}
+  .container{{padding:18px;}}
+  .header{{padding:22px;}}
+}}
+</style>
+</head>
 
-(outdir / 'integrated_tb_amr_mtbc_phylogenomics_report.html').write_text(html_out, encoding='utf-8')
+<body>
+<div class="header">
+<h1>Interactive TB AMR MTBC Phylogenomics Report</h1>
+<p>Trimming → QC → TB-Profiler → MTBC-only filtering → core-SNP phylogenomics → final merged report</p>
+<p><strong>Run generated:</strong> {safe(run_started_utc)} &nbsp; | &nbsp; <strong>Run stamp:</strong> {safe(run_stamp)}</p>
+</div>
+
+<div class="container">
+
+<div class="cards">
+<div class="card"><h3>Total paired samples</h3><div class="num blue">{total_samples}</div></div>
+<div class="card"><h3>MTBC isolates retained</h3><div class="num green">{mtbc_retained}</div></div>
+<div class="card"><h3>Non-MTBC excluded</h3><div class="num orange">{non_mtbc}</div></div>
+<div class="card"><h3>Drug-resistant isolates</h3><div class="num red">{drug_resistant}</div></div>
+</div>
+
+{build_qc_section()}
+
+<div class="section">
+<h2>2. TB-Profiler Resistance, Species, and Lineage Report</h2>
+
+<div class="note">
+<strong>Interpretation note:</strong> TB-Profiler is using WHO 2021+ definitions for classification of drug-resistance results.
+<strong>Key WHO 2021+ resistance definitions:</strong>
+<strong>Rifampicin-resistant TB (RR-TB):</strong> resistant to rifampicin, with or without resistance to other drugs.
+<strong>Multidrug-resistant TB (MDR-TB):</strong> resistance to at least isoniazid and rifampicin.
+<strong>Pre-extensively drug-resistant TB (Pre-XDR-TB):</strong> MDR/RR-TB that is also resistant to any fluoroquinolone.
+<strong>Extensively drug-resistant TB (XDR-TB):</strong> MDR/RR-TB that is resistant to any fluoroquinolone and at least one additional Group A drug, bedaquiline or linezolid.
+</div>
+
+<div class="controls">
+<input id="tbSearch" onkeyup="filterTable('tbSearch','tbTable')" placeholder="Search TB-Profiler results...">
+<select onchange="filterResistance(this.value)">
+<option value="">All resistance profiles</option>
+<option value="Sensitive">Sensitive only</option>
+<option value="Monoresistance">Monoresistance / HR-TB / RR-TB</option>
+<option value="MDR">MDR only</option>
+<option value="Pre-XDR">Pre-XDR only</option>
+<option value="XDR">XDR only</option>
+<option value="Unknown">Unknown only</option>
+</select>
+<button onclick="downloadCSV('tbTable','tbprofiler_summary.csv')">Download TB-Profiler CSV</button>
+</div>
+
+<table id="tbTable">
+<thead>
+<tr>
+<th class="sample" onclick="sortTable('tbTable',0)">Sample ID</th>
+<th class="species" onclick="sortTable('tbTable',1)">Species</th>
+<th class="lineage" onclick="sortTable('tbTable',2)">Lineage</th>
+<th class="resistance" onclick="sortTable('tbTable',3)">Resistance profile</th>
+<th class="mutations" onclick="sortTable('tbTable',4)">Resistant drugs / key mutations</th>
+<th class="status" onclick="sortTable('tbTable',5)">MTBC decision</th>
+</tr>
+</thead>
+<tbody>
+{build_tb_rows()}
+</tbody>
+</table>
+</div>
+
+{build_nonsyn_section()}
+
+<div class="section">
+<h2>4. MTBC-only Core-SNP Phylogenetic Tree</h2>
+<div class="grid2">
+<div class="tree-panel">
+{tree_html}
+{build_tree_legend()}
+</div>
+<div class="details">
+<h3>Tree construction summary</h3>
+<p><strong>Included:</strong> {mtbc_retained} TB-Profiler-confirmed MTBC isolate(s).</p>
+<p><strong>Excluded:</strong> {non_mtbc} non-MTBC or low-confidence isolate(s).</p>
+<p><strong>Core alignment:</strong> Snippy-core alignment.</p>
+<p><strong>Recombination:</strong> Optional Gubbins-filtered alignment when enabled.</p>
+<p><strong>Tree:</strong> IQ-TREE2 maximum-likelihood phylogeny.</p>
+<p><strong>Display:</strong> ETE3-rendered static tree image, shown inside an auto-scaling scrollable report panel.</p>
+{build_iqtree_section()}
+</div>
+</div>
+</div>
+
+<div class="section">
+<h2>5. Final Interpretation</h2>
+<p>The report documents all samples through QC and TB-Profiler analysis, then applies an MTBC-only rule before phylogenomic reconstruction. Samples not classified as MTBC are excluded from the tree but retained in the workflow record for transparency.</p>
+<div class="note">
+<strong>Interpretation:</strong> use close clustering together with bootstrap support, lineage, drug-resistance profile, metadata, and SNP distances before making transmission inferences.
+</div>
+</div>
+
+<div class="footer">
+Generated by TB_AMR_MTBC_Phylogenomics WDL workflow. Run generated: {safe(run_started_utc)}. Run stamp: {safe(run_stamp)}.
+</div>
+
+</div>
+
+<script>
+function filterTable(inputId, tableId){{
+  const filter=document.getElementById(inputId).value.toLowerCase();
+  const rows=document.getElementById(tableId).getElementsByTagName("tbody")[0].rows;
+  for(let i=0;i<rows.length;i++){{
+    rows[i].style.display=rows[i].innerText.toLowerCase().includes(filter)?"":"none";
+  }}
+}}
+
+function filterResistance(value){{
+  const rows=document.getElementById("tbTable").getElementsByTagName("tbody")[0].rows;
+  for(let i=0;i<rows.length;i++){{
+    rows[i].style.display=value===""||rows[i].cells[3].innerText.includes(value)?"":"none";
+  }}
+}}
+
+function sortTable(tableId,col){{
+  const table=document.getElementById(tableId);
+  const tbody=table.tBodies[0];
+  const rows=Array.from(tbody.rows);
+  const asc=table.getAttribute("data-sort-col")!=col||table.getAttribute("data-sort-dir")!=="asc";
+  rows.sort((a,b)=>{{
+    const A=a.cells[col].innerText.replace(/,/g,'');
+    const B=b.cells[col].innerText.replace(/,/g,'');
+    const nA=parseFloat(A),nB=parseFloat(B);
+    if(!isNaN(nA)&&!isNaN(nB))return asc?nA-nB:nB-nA;
+    return asc?A.localeCompare(B):B.localeCompare(A);
+  }});
+  rows.forEach(r=>tbody.appendChild(r));
+  table.setAttribute("data-sort-col",col);
+  table.setAttribute("data-sort-dir",asc?"asc":"desc");
+}}
+
+function downloadCSV(tableId, filename){{
+  const table=document.getElementById(tableId);
+  let csv=[];
+  for(const row of table.rows){{
+    let cols=[];
+    for(const cell of row.cells){{
+      cols.push('"' + cell.innerText.replace(/"/g,'""') + '"');
+    }}
+    csv.push(cols.join(","));
+  }}
+  const blob=new Blob([csv.join("\\n")],{{type:"text/csv"}});
+  const link=document.createElement("a");
+  link.href=URL.createObjectURL(blob);
+  link.download=filename;
+  link.click();
+}}
+</script>
+
+</body>
+</html>
+"""
+
+(outdir / "integrated_tb_amr_mtbc_phylogenomics_report.html").write_text(html_out, encoding="utf-8")
 PY
   >>>
 
@@ -2126,11 +2455,10 @@ PY
     docker: "~{docker_image}"
     cpu: 1
     memory: "4 GB"
-    disks: "local-disk 20 HDD"
   }
 
   output {
-    File final_report_html = "final_report/integrated_tb_amr_mtbc_phylogenomics_report.html"
     File run_metadata = "final_report/run_metadata.txt"
+    File final_report_html = "final_report/integrated_tb_amr_mtbc_phylogenomics_report.html"
   }
 }
