@@ -15,6 +15,8 @@ Read trimming
         ⬇
 FastQC + MultiQC
         ⬇
+Species typing
+        ⬇
 TB-Profiler AMR, species & lineage profiling
         ⬇
 MTBC-only sample filtering
