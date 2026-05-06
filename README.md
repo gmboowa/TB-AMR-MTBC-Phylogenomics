@@ -6,6 +6,13 @@ The workflow supports paired-end Illumina FASTQ inputs & produces quality-contro
 
 
 ## Workflow overview
+
+<p align="center">
+  <img src="docs/assets/workflow/tb_amr_mtbc_phylogenomics_workflow.png"
+       alt="TB-AMR-MTBC-Phylogenomics workflow"
+       width="100%">
+</p>
+
 <div align="center">
 <pre>
 
