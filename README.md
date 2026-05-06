@@ -8,7 +8,7 @@ The workflow supports paired-end Illumina FASTQ inputs & produces quality-contro
 ## Workflow overview
 
 <p align="center">
-  <img src="docs/assets/workflow/tb_amr_mtbc_phylogenomics_workflow.png"
+  <img src="docs/assets/workflow/TB_AMR_MTBC_Phylogenomics.png"
        alt="TB-AMR-MTBC-Phylogenomics workflow"
        width="100%">
 </p>
