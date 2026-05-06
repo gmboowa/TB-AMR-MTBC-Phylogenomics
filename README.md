@@ -154,6 +154,22 @@ The input FASTQ files must be ordered like this:
 }
 ```
 
+## Docker images used in the workflow
+
+| Workflow component | Docker image | Purpose |
+|---|---|---|
+| Read trimming | `quay.io/biocontainers/trimmomatic:0.39--hdfd78af_2` | Adapter trimming & read quality filtering |
+| FastQC | `staphb/fastqc:0.11.9` | Read-level quality control |
+| MultiQC | `ewels/multiqc:latest` | Aggregated QC reporting |
+| Species typing | `gmboowa/mycobacterium-kraken2-bracken:2026.05` | *Mycobacterium* species identification using Kraken2 + Bracken |
+| TB-Profiler | `staphb/tbprofiler:6.6.6` | MTBC drug-resistance prediction & lineage profiling |
+| Snippy | `staphb/snippy:4.6.0` | Reference-guided SNP calling |
+| Snippy-core | `staphb/snippy:4.6.0` | Core-SNP alignment generation |
+| Gubbins | `staphb/gubbins:3.4.1` | Recombination filtering |
+| IQ-TREE2 | `staphb/iqtree2:2.3.4` | Maximum-likelihood phylogenetic inference |
+| Tree visualization | `gmboowa/ete3-render:1.18` | Publication-style phylogenetic tree rendering |
+| Report merging | `python:3.11-slim` | Final integrated HTML report generation |
+
 ## Running the workflow
 
 From the repository root:
