@@ -588,10 +588,18 @@ task SPECIES_TYPING {
 
       base="$(basename "$r1")"
       sample_id="$base"
+      sample_id="${sample_id%_R1_paired.fastq.gz}"
+      sample_id="${sample_id%_R2_paired.fastq.gz}"
+      sample_id="${sample_id%_R1_paired.fq.gz}"
+      sample_id="${sample_id%_R2_paired.fq.gz}"
       sample_id="${sample_id%_R1.fastq.gz}"
+      sample_id="${sample_id%_R2.fastq.gz}"
       sample_id="${sample_id%_R1.fq.gz}"
+      sample_id="${sample_id%_R2.fq.gz}"
       sample_id="${sample_id%_1.fastq.gz}"
+      sample_id="${sample_id%_2.fastq.gz}"
       sample_id="${sample_id%_1.fq.gz}"
+      sample_id="${sample_id%_2.fq.gz}"
       sample_id="${sample_id%.fastq.gz}"
       sample_id="${sample_id%.fq.gz}"
 
@@ -643,6 +651,33 @@ with open("species_typing/species_typing.tsv", newline="") as handle:
     for row in reader:
         rows.append(row)
 
+def species_badge(label):
+    label = label or ""
+    text = label.strip().lower()
+
+    if text == "mycobacterium tuberculosis":
+        return (
+            '<span style="display:inline-block;'
+            'padding:4px 8px;'
+            'border-radius:999px;'
+            'background:#6F42C1;'
+            'color:white;'
+            'font-size:12px;'
+            'font-weight:700;">'
+            f'{escape(label)}</span>'
+        )
+
+    return (
+        '<span style="display:inline-block;'
+        'padding:4px 8px;'
+        'border-radius:999px;'
+        'background:#28A745;'
+        'color:white;'
+        'font-size:12px;'
+        'font-weight:700;">'
+        f'{escape(label)}</span>'
+    )
+
 html = []
 html.append('<section class="card">')
 html.append('<h2>2. Species Typing using Kraken2 + Bracken</h2>')
@@ -657,7 +692,7 @@ if rows:
         html.append(
             "<tr>"
             f"<td>{escape(row.get('Sample_ID',''))}</td>"
-            f"<td><strong>{escape(row.get('Species_Identified',''))}</strong></td>"
+            f"<td>{species_badge(row.get('Species_Identified',''))}</td>"
             f"<td>{escape(row.get('Evidence',''))}</td>"
             "</tr>"
         )
@@ -2081,6 +2116,18 @@ def badge(label):
 def green_badge(label):
     return f'<span class="badge badge-green" style="background:#28A745 !important;color:white !important;font-weight:700;">{safe(label)}</span>'
 
+def species_badge(label):
+    text = (label or "").strip().lower()
+
+    if text == "mycobacterium tuberculosis":
+        return (
+            '<span class="badge" '
+            'style="background:#6F42C1 !important;color:white !important;font-weight:700;">'
+            f'{safe(label)}</span>'
+        )
+
+    return green_badge(label)
+
 total_samples = max(len(species_rows), len(rows))
 mtbc_retained = len(rows)
 non_mtbc = max(total_samples - mtbc_retained, 0)
@@ -2170,7 +2217,7 @@ def build_species_section():
             body.append(
                 "<tr>"
                 f"<td>{safe(sample)}</td>"
-                f"<td>{green_badge(species)}</td>"
+                f"<td>{species_badge(species)}</td>"
                 f"<td>{safe(evidence)}</td>"
                 "</tr>"
             )
