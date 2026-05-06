@@ -15,9 +15,9 @@ Read trimming
         ⬇
 FastQC + MultiQC
         ⬇
-Species typing
+Mycobacteria species typing
         ⬇
-TB-Profiler AMR, species & lineage profiling
+TB-Profiler AMR, MTB species & lineage profiling
         ⬇
 MTBC-only sample filtering
         ⬇
