@@ -823,7 +823,6 @@ def clean_value(v):
                 out.append(y)
         return "; ".join(out)
     if isinstance(v, dict):
-        # Avoid dumping entire dicts into report cells.
         for key in ["name", "drug", "gene", "change", "mutation", "original_mutation", "confidence", "source"]:
             if key in v and v[key] not in (None, "", [], {}):
                 return clean_value(v[key])
@@ -838,6 +837,175 @@ def uniq(xs):
             seen.append(x)
     return ", ".join(seen)
 
+def normalize_drug_name(x):
+    s = str(x or "").strip().lower()
+    s = re.sub(r"[_\-]+", " ", s)
+    s = re.sub(r"\s+", " ", s)
+
+    aliases = {
+        "inh": "isoniazid",
+        "isoniazid": "isoniazid",
+        "h": "isoniazid",
+
+        "rif": "rifampicin",
+        "rmp": "rifampicin",
+        "rifampin": "rifampicin",
+        "rifampicin": "rifampicin",
+        "r": "rifampicin",
+
+        "pza": "pyrazinamide",
+        "pyrazinamide": "pyrazinamide",
+        "z": "pyrazinamide",
+
+        "emb": "ethambutol",
+        "ethambutol": "ethambutol",
+        "e": "ethambutol",
+
+        "sm": "streptomycin",
+        "str": "streptomycin",
+        "streptomycin": "streptomycin",
+        "s": "streptomycin",
+
+        "levo": "levofloxacin",
+        "levofloxacin": "levofloxacin",
+        "lfx": "levofloxacin",
+
+        "moxi": "moxifloxacin",
+        "moxifloxacin": "moxifloxacin",
+        "mfx": "moxifloxacin",
+
+        "ofx": "ofloxacin",
+        "ofloxacin": "ofloxacin",
+
+        "amikacin": "amikacin",
+        "amk": "amikacin",
+
+        "kanamycin": "kanamycin",
+        "kan": "kanamycin",
+
+        "capreomycin": "capreomycin",
+        "cap": "capreomycin",
+
+        "bedaquiline": "bedaquiline",
+        "bdq": "bedaquiline",
+
+        "linezolid": "linezolid",
+        "lzd": "linezolid",
+
+        "clofazimine": "clofazimine",
+        "cfz": "clofazimine",
+
+        "ethionamide": "ethionamide",
+        "eto": "ethionamide",
+
+        "prothionamide": "prothionamide",
+        "pto": "prothionamide",
+
+        "cycloserine": "cycloserine",
+        "cs": "cycloserine",
+
+        "para aminosalicylic acid": "para-aminosalicylic acid",
+        "pas": "para-aminosalicylic acid",
+
+        "delamanid": "delamanid",
+        "dlm": "delamanid",
+
+        "pretomanid": "pretomanid",
+        "pa": "pretomanid",
+    }
+
+    return aliases.get(s, s)
+
+def split_drug_tokens(value):
+    if not value:
+        return []
+    if isinstance(value, list):
+        values = value
+    else:
+        values = [value]
+
+    out = []
+    for v in values:
+        txt = str(v or "")
+        txt = txt.replace(";", ",")
+        txt = txt.replace("|", ",")
+        txt = txt.replace("/", ",")
+        txt = re.sub(r"\band\b", ",", txt, flags=re.IGNORECASE)
+        for part in txt.split(","):
+            p = normalize_drug_name(part)
+            if p and p not in ["none", "none reported", "not reported", "susceptible", "sensitive"]:
+                out.append(p)
+    return out
+
+def classify_who_resistance(resistant_drugs, tbprofiler_drtype):
+    drugs = set()
+    for d in resistant_drugs:
+        for token in split_drug_tokens(d):
+            drugs.add(token)
+
+    drtype_text = str(tbprofiler_drtype or "").strip()
+    drtype_lower = drtype_text.lower()
+
+    if not drugs and drtype_lower in ["", "none", "not reported", "susceptible", "sensitive"]:
+        return "Sensitive"
+
+    if "xdr" in drtype_lower and "pre" not in drtype_lower:
+        return "XDR"
+
+    if "pre-xdr" in drtype_lower or "pre xdr" in drtype_lower:
+        return "Pre-XDR"
+
+    if "mdr" in drtype_lower:
+        return "MDR"
+
+    if re.search(r"\bhr[- ]?tb\b", drtype_lower):
+        return "HR-TB"
+
+    if re.search(r"\brr[- ]?tb\b", drtype_lower):
+        return "RR-TB"
+
+    isoniazid = "isoniazid" in drugs
+    rifampicin = "rifampicin" in drugs
+
+    fluoroquinolones = {
+        "levofloxacin",
+        "moxifloxacin",
+        "ofloxacin",
+        "gatifloxacin",
+        "ciprofloxacin"
+    }
+
+    group_a_additional = {
+        "bedaquiline",
+        "linezolid"
+    }
+
+    has_fq = bool(drugs.intersection(fluoroquinolones))
+    has_group_a_additional = bool(drugs.intersection(group_a_additional))
+
+    if isoniazid and rifampicin and has_fq and has_group_a_additional:
+        return "XDR"
+
+    if isoniazid and rifampicin and has_fq:
+        return "Pre-XDR"
+
+    if isoniazid and rifampicin:
+        return "MDR"
+
+    if rifampicin and not isoniazid:
+        return "RR-TB"
+
+    if isoniazid and not rifampicin:
+        return "HR-TB"
+
+    if len(drugs) == 1:
+        return "Monoresistance"
+
+    if len(drugs) > 1:
+        return "Other drug resistance"
+
+    return "Sensitive"
+
 species = clean_value(get_path(data, [
     "species", "main_species", "taxon", "organism",
     "phylogeny.species", "lineage.species"
@@ -851,7 +1019,7 @@ sub_lineage = clean_value(get_path(data, [
     "sub_lineage", "sublineage", "sublin", "sub_lin", "phylogeny.sublineage"
 ]))
 
-dr_type = clean_value(get_path(data, [
+dr_type_raw = clean_value(get_path(data, [
     "drtype", "dr_type", "resistance_type", "drug_resistance_type", "prediction.drtype"
 ]))
 
@@ -919,8 +1087,11 @@ for key in ["drug_table", "drugs", "resistance"]:
             if drug and any(x in s for x in ["resistant", '"r"', "assoc w r", "high confidence"]):
                 resistant_drugs.append(drug)
 
-if dr_type and dr_type.lower() not in ["not reported", "susceptible", "sensitive", "none"] and not resistant_drugs:
-    resistant_drugs.append(dr_type)
+dr_type = classify_who_resistance(resistant_drugs, dr_type_raw)
+
+if dr_type_raw and dr_type_raw.lower() not in ["not reported", "susceptible", "sensitive", "none"] and not resistant_drugs:
+    if dr_type not in ["Sensitive"]:
+        resistant_drugs.append(dr_type_raw)
 
 text_species = species.lower()
 mtbc_species_terms = [
@@ -952,10 +1123,6 @@ if explicit_non_mtbc:
     is_mtbc = False
     reason = "Explicit non-MTBC species reported"
 
-# TB-Profiler JSON files do not always expose a top-level species field.
-# When species is absent but a valid MTBC lineage is present, keep the sample
-# selected and report an explicit inferred MTBC label instead of "Not reported".
-# When the sample is not selected and species is absent, report it as Non-MTB/Not MTBC.
 species_display = species
 if not species_display and is_mtbc:
     species_display = "Mycobacterium tuberculosis complex (inferred from TB-Profiler lineage)"
@@ -1644,6 +1811,7 @@ task TREE_VISUALIZATION {
     python3 - <<'PY'
 from pathlib import Path
 import csv
+import re
 
 tree_input = "~{if defined(input_tree) then input_tree else ""}"
 tbprofiler_summary_path = "~{if defined(tbprofiler_summary_tsv) then tbprofiler_summary_tsv else ""}"
@@ -1657,11 +1825,14 @@ log.write_text("TREE_VISUALIZATION started\n")
 
 RESISTANCE_COLORS = {
   "Unknown": "#999999",
-  "Sensitive": "#1b9e77",
-  "MDR": "#d73027",
-  "Pre-XDR": "#FF6A00",
-  "XDR": "#FF0000",
-  "Other": "#e6ab02"
+  "Sensitive": "#2a9d8f",
+  "Monoresistance": "#fcd33d",
+  "HR-TB": "#2292dc",
+  "RR-TB": "#3b82f6",
+  "MDR": "#ed641e",
+  "Pre-XDR": "#ed2828",
+  "XDR": "#5a189a",
+  "Other drug resistance": "#2292dc"
 }
 
 try:
@@ -1680,29 +1851,203 @@ try:
 
     metadata = {}
 
+    def normalize_drug_name(x):
+        s = str(x or "").strip().lower()
+        s = re.sub(r"[_\-]+", " ", s)
+        s = re.sub(r"\s+", " ", s)
+
+        aliases = {
+            "inh": "isoniazid",
+            "isoniazid": "isoniazid",
+            "h": "isoniazid",
+            "rif": "rifampicin",
+            "rmp": "rifampicin",
+            "rifampin": "rifampicin",
+            "rifampicin": "rifampicin",
+            "r": "rifampicin",
+            "pza": "pyrazinamide",
+            "pyrazinamide": "pyrazinamide",
+            "z": "pyrazinamide",
+            "emb": "ethambutol",
+            "ethambutol": "ethambutol",
+            "e": "ethambutol",
+            "sm": "streptomycin",
+            "str": "streptomycin",
+            "streptomycin": "streptomycin",
+            "s": "streptomycin",
+            "levo": "levofloxacin",
+            "levofloxacin": "levofloxacin",
+            "lfx": "levofloxacin",
+            "moxi": "moxifloxacin",
+            "moxifloxacin": "moxifloxacin",
+            "mfx": "moxifloxacin",
+            "ofx": "ofloxacin",
+            "ofloxacin": "ofloxacin",
+            "amikacin": "amikacin",
+            "amk": "amikacin",
+            "kanamycin": "kanamycin",
+            "kan": "kanamycin",
+            "capreomycin": "capreomycin",
+            "cap": "capreomycin",
+            "bedaquiline": "bedaquiline",
+            "bdq": "bedaquiline",
+            "linezolid": "linezolid",
+            "lzd": "linezolid",
+            "clofazimine": "clofazimine",
+            "cfz": "clofazimine",
+            "ethionamide": "ethionamide",
+            "eto": "ethionamide",
+            "prothionamide": "prothionamide",
+            "pto": "prothionamide",
+            "cycloserine": "cycloserine",
+            "cs": "cycloserine",
+            "para aminosalicylic acid": "para-aminosalicylic acid",
+            "para-aminosalicylic acid": "para-aminosalicylic acid",
+            "pas": "para-aminosalicylic acid",
+            "delamanid": "delamanid",
+            "dlm": "delamanid",
+            "pretomanid": "pretomanid",
+            "pa": "pretomanid"
+        }
+
+        return aliases.get(s, s)
+
+    def split_drug_tokens(value):
+        if not value:
+            return []
+
+        txt = str(value or "")
+        txt = txt.replace(";", ",")
+        txt = txt.replace("|", ",")
+        txt = txt.replace("/", ",")
+        txt = re.sub(r"\band\b", ",", txt, flags=re.IGNORECASE)
+
+        out = []
+        for part in txt.split(","):
+            p = normalize_drug_name(part)
+            if p and p not in {"none", "none reported", "not reported", "susceptible", "sensitive", "unknown", "na", "n/a"}:
+                out.append(p)
+
+        return out
+
     def classify_resistance(dr_type, resistant_drugs):
         profile_raw = (dr_type or "").strip()
         profile = profile_raw.lower().replace("_", "-")
 
-        if profile in {"susceptible", "sensitive"}:
+        drugs = set(split_drug_tokens(resistant_drugs))
+
+        if not drugs and profile in {"", "not reported", "unknown", "na", "n/a", "none", "susceptible", "sensitive"}:
             return "Sensitive", RESISTANCE_COLORS["Sensitive"]
+
+        if "xdr" in profile and "pre" not in profile:
+            return "XDR", RESISTANCE_COLORS["XDR"]
 
         if "pre-xdr" in profile or "pre xdr" in profile or "prexdr" in profile:
             return "Pre-XDR", RESISTANCE_COLORS["Pre-XDR"]
 
-        if "xdr" in profile:
-            return "XDR", RESISTANCE_COLORS["XDR"]
-
         if "mdr" in profile:
             return "MDR", RESISTANCE_COLORS["MDR"]
 
-        # Preserve the exact TB-Profiler resistance profile label:
-        # e.g. HR-TB, RR-TB, RIF resistant, INH resistant.
-        # These all share the same yellow color but keep their original names.
-        if profile_raw and profile not in {"other", "not reported", "unknown", "na", "n/a", "none"}:
-            return profile_raw, RESISTANCE_COLORS["Other"]
+        if re.search(r"\bhr[- ]?tb\b", profile):
+            return "HR-TB", RESISTANCE_COLORS["HR-TB"]
+
+        if re.search(r"\brr[- ]?tb\b", profile):
+            return "RR-TB", RESISTANCE_COLORS["RR-TB"]
+
+        isoniazid = "isoniazid" in drugs
+        rifampicin = "rifampicin" in drugs
+
+        fluoroquinolones = {
+            "levofloxacin",
+            "moxifloxacin",
+            "ofloxacin",
+            "gatifloxacin",
+            "ciprofloxacin"
+        }
+
+        group_a_additional = {
+            "bedaquiline",
+            "linezolid"
+        }
+
+        has_fq = bool(drugs.intersection(fluoroquinolones))
+        has_group_a_additional = bool(drugs.intersection(group_a_additional))
+
+        if isoniazid and rifampicin and has_fq and has_group_a_additional:
+            return "XDR", RESISTANCE_COLORS["XDR"]
+
+        if isoniazid and rifampicin and has_fq:
+            return "Pre-XDR", RESISTANCE_COLORS["Pre-XDR"]
+
+        if isoniazid and rifampicin:
+            return "MDR", RESISTANCE_COLORS["MDR"]
+
+        if rifampicin and not isoniazid:
+            return "RR-TB", RESISTANCE_COLORS["RR-TB"]
+
+        if isoniazid and not rifampicin:
+            return "HR-TB", RESISTANCE_COLORS["HR-TB"]
+
+        if len(drugs) == 1:
+            return "Monoresistance", RESISTANCE_COLORS["Monoresistance"]
+
+        if len(drugs) > 1:
+            return "Other drug resistance", RESISTANCE_COLORS["Other drug resistance"]
+
+        if profile_raw and profile not in {"not reported", "unknown", "na", "n/a", "none"}:
+            return profile_raw, RESISTANCE_COLORS["Other drug resistance"]
 
         return "Unknown", RESISTANCE_COLORS["Unknown"]
+
+    def clean_single_bootstrap_value(raw_value):
+        raw = str(raw_value or "").strip()
+
+        if not raw:
+            return ""
+
+        raw = raw.strip("'\"")
+
+        numeric_tokens = re.findall(r"\d+(?:\.\d+)?", raw)
+
+        if not numeric_tokens:
+            return ""
+
+        if len(numeric_tokens) >= 2:
+            support_value = numeric_tokens[-1]
+        else:
+            support_value = numeric_tokens[0]
+
+            if support_value.isdigit():
+                if support_value == "100100":
+                    support_value = "100"
+                elif len(support_value) == 6 and support_value.endswith("100"):
+                    support_value = "100"
+                elif len(support_value) == 5 and support_value.endswith("100"):
+                    support_value = "100"
+                elif len(support_value) == 4:
+                    first_half = support_value[:2]
+                    second_half = support_value[2:]
+
+                    if first_half == second_half:
+                        support_value = second_half
+                    else:
+                        support_value = second_half
+
+        try:
+            value = float(support_value)
+
+            if 0 < value <= 1:
+                value = value * 100
+
+            if value <= 0:
+                return ""
+
+            if value > 100:
+                return ""
+
+            return str(int(round(value)))
+        except Exception:
+            return ""
 
     if tbprofiler_summary_path and Path(tbprofiler_summary_path).exists():
         with open(tbprofiler_summary_path, newline="") as fh:
@@ -1828,6 +2173,19 @@ try:
         margin_right = 2000
 
     for node in t.traverse():
+        if not node.is_leaf():
+            raw_name = str(getattr(node, "name", "") or "").strip()
+            clean_support = clean_single_bootstrap_value(raw_name)
+
+            if not clean_support:
+                raw_support = str(getattr(node, "support", "") or "").strip()
+
+                if raw_support not in {"", "0", "0.0", "1", "1.0"}:
+                    clean_support = clean_single_bootstrap_value(raw_support)
+
+            node.add_feature("clean_support_label", clean_support)
+
+    for node in t.traverse():
         ns = NodeStyle()
         ns["hz_line_width"] = branch_width
         ns["vt_line_width"] = branch_width
@@ -1875,41 +2233,23 @@ try:
             ns["size"] = 0
             node.set_style(ns)
 
-            support = ""
+            support = str(getattr(node, "clean_support_label", "") or "").strip()
+            show_support = True
 
-            # Prefer the original IQ-TREE internal node label.
-            # If IQ-TREE produced SH-aLRT/UFBoot labels such as 99.4/100,
-            # display only the UFBoot/bootstrap value after "/".
-            raw_name = str(getattr(node, "name", "") or "").strip()
+            parent = node.up
+            if parent is not None and not parent.is_leaf():
+                parent_support = str(getattr(parent, "clean_support_label", "") or "").strip()
 
-            if raw_name:
-                try:
-                    if "/" in raw_name:
-                        raw_name = raw_name.split("/")[-1].strip()
+                if parent_support == support:
+                    support = "  " + support
 
-                    value = float(raw_name)
+            node.name = ""
+            try:
+                node.support = 0
+            except Exception:
+                pass
 
-                    if 0 < value <= 1:
-                        value = value * 100
-
-                    support = str(int(round(value)))
-                except Exception:
-                    support = ""
-            else:
-                raw_support = str(getattr(node, "support", "") or "").strip()
-
-                # ETE3 may assign default internal-node support = 1.0.
-                # Do not convert this default to 100 unless it came from a real label.
-                if raw_support not in {"", "0", "0.0", "1", "1.0"}:
-                    try:
-                        value = float(raw_support)
-                        if 0 < value <= 1:
-                            value = value * 100
-                        support = str(int(round(value)))
-                    except Exception:
-                        support = ""
-
-            if support:
+            if support and show_support:
                 node.add_face(
                     TextFace(support, fsize=bootstrap_font, fgcolor="#b00000"),
                     column=0,
@@ -1956,7 +2296,7 @@ try:
         fh.write(f"Branch width: {branch_width}\n")
         fh.write(f"Branch vertical margin: {branch_vertical_margin}\n")
         fh.write(f"Right margin: {margin_right}\n")
-        fh.write("Bootstrap/support display: original IQ-TREE internal labels preferred; ETE3 default 1.0 skipped\n")
+        fh.write("Bootstrap/support display: two-pass support preservation; adjacent identical parent-child support offset and kept visible\n")
         fh.write("Susceptibility color key:\n")
         for label, hex_color in RESISTANCE_COLORS.items():
             fh.write(f"  {label}: {hex_color}\n")
@@ -2071,47 +2411,187 @@ species_rows = list(csv.DictReader(open(species_tsv), delimiter="\t"))
 nonsyn_rows = list(csv.DictReader(open(nonsyn_tsv), delimiter="\t"))
 
 RESISTANCE_COLORS = {
-  "Sensitive": "#1b9e77",
-  "Monoresistance": "#e6ab02",
-  "MDR": "#d73027",
-  "Pre-XDR": "#FF6A00",
-  "XDR": "#FF0000",
+  "Sensitive": "#2a9d8f",
+  "Monoresistance": "#fcd33d",
+  "HR-TB": "#2292dc",
+  "RR-TB": "#3b82f6",
+  "MDR": "#ed641e",
+  "Pre-XDR": "#ed2828",
+  "XDR": "#5a189a",
+  "Other drug resistance": "#2292dc",
   "Unknown": "#999999",
 }
 
+def normalize_drug_name(x):
+    s = str(x or "").strip().lower()
+    s = re.sub(r"[_\-]+", " ", s)
+    s = re.sub(r"\s+", " ", s)
+
+    aliases = {
+        "inh": "isoniazid",
+        "isoniazid": "isoniazid",
+        "h": "isoniazid",
+
+        "rif": "rifampicin",
+        "rmp": "rifampicin",
+        "rifampin": "rifampicin",
+        "rifampicin": "rifampicin",
+        "r": "rifampicin",
+
+        "pza": "pyrazinamide",
+        "pyrazinamide": "pyrazinamide",
+        "z": "pyrazinamide",
+
+        "emb": "ethambutol",
+        "ethambutol": "ethambutol",
+        "e": "ethambutol",
+
+        "sm": "streptomycin",
+        "str": "streptomycin",
+        "streptomycin": "streptomycin",
+        "s": "streptomycin",
+
+        "levo": "levofloxacin",
+        "levofloxacin": "levofloxacin",
+        "lfx": "levofloxacin",
+
+        "moxi": "moxifloxacin",
+        "moxifloxacin": "moxifloxacin",
+        "mfx": "moxifloxacin",
+
+        "ofx": "ofloxacin",
+        "ofloxacin": "ofloxacin",
+
+        "amikacin": "amikacin",
+        "amk": "amikacin",
+
+        "kanamycin": "kanamycin",
+        "kan": "kanamycin",
+
+        "capreomycin": "capreomycin",
+        "cap": "capreomycin",
+
+        "bedaquiline": "bedaquiline",
+        "bdq": "bedaquiline",
+
+        "linezolid": "linezolid",
+        "lzd": "linezolid",
+
+        "clofazimine": "clofazimine",
+        "cfz": "clofazimine",
+
+        "ethionamide": "ethionamide",
+        "eto": "ethionamide",
+
+        "prothionamide": "prothionamide",
+        "pto": "prothionamide",
+
+        "cycloserine": "cycloserine",
+        "cs": "cycloserine",
+
+        "para aminosalicylic acid": "para-aminosalicylic acid",
+        "para-aminosalicylic-acid": "para-aminosalicylic acid",
+        "pas": "para-aminosalicylic acid",
+
+        "delamanid": "delamanid",
+        "dlm": "delamanid",
+
+        "pretomanid": "pretomanid",
+        "pa": "pretomanid",
+    }
+
+    return aliases.get(s, s)
+
+def split_drug_tokens(value):
+    if not value:
+        return []
+
+    txt = str(value or "")
+    txt = txt.replace(";", ",")
+    txt = txt.replace("|", ",")
+    txt = txt.replace("/", ",")
+    txt = re.sub(r"\band\b", ",", txt, flags=re.IGNORECASE)
+
+    out = []
+    for part in txt.split(","):
+        p = normalize_drug_name(part)
+        if p and p not in {"none", "none reported", "not reported", "susceptible", "sensitive", "unknown", "na", "n/a"}:
+            out.append(p)
+
+    return out
+
 def classify_resistance(dr_type, resistant_drugs):
-    text = f"{dr_type or ''} {resistant_drugs or ''}".lower().replace("_", "-")
+    profile_raw = (dr_type or "").strip()
+    profile = profile_raw.lower().replace("_", "-")
+    drugs = set(split_drug_tokens(resistant_drugs))
 
-    if any(x in text for x in ["xdr-tb", "xdr", "extensively drug"]) and not any(x in text for x in ["pre-xdr", "pre xdr", "prexdr"]):
-        return "XDR"
-
-    if any(x in text for x in ["pre-xdr", "pre xdr", "prexdr"]):
-        return "Pre-XDR"
-
-    if "mdr" in text or ("rif" in text and "inh" in text) or ("rifampicin" in text and "isoniazid" in text):
-        return "MDR"
-
-    if any(x in text for x in [
-        "rif resistant", "rifampicin resistant", "rr-tb", "rif",
-        "inh resistant", "isoniazid resistant", "hr-tb", "inh",
-        "mono", "monoresistant", "mono-resistant"
-    ]):
-        return "Monoresistance"
-
-    if any(x in text for x in [
-        "susceptible", "sensitive", "pan-susceptible",
-        "none reported", "no resistance"
-    ]):
+    if not drugs and profile in {"", "none", "not reported", "na", "n/a", "unknown", "susceptible", "sensitive"}:
         return "Sensitive"
 
-    if text.strip() in {"", "none", "not reported", "na", "n/a", "unknown", "other"}:
-        return "Unknown"
+    if "xdr" in profile and "pre" not in profile:
+        return "XDR"
+
+    if "pre-xdr" in profile or "pre xdr" in profile or "prexdr" in profile:
+        return "Pre-XDR"
+
+    if "mdr" in profile:
+        return "MDR"
+
+    if re.search(r"\bhr[- ]?tb\b", profile):
+        return "HR-TB"
+
+    if re.search(r"\brr[- ]?tb\b", profile):
+        return "RR-TB"
+
+    isoniazid = "isoniazid" in drugs
+    rifampicin = "rifampicin" in drugs
+
+    fluoroquinolones = {
+        "levofloxacin",
+        "moxifloxacin",
+        "ofloxacin",
+        "gatifloxacin",
+        "ciprofloxacin"
+    }
+
+    group_a_additional = {
+        "bedaquiline",
+        "linezolid"
+    }
+
+    has_fq = bool(drugs.intersection(fluoroquinolones))
+    has_group_a_additional = bool(drugs.intersection(group_a_additional))
+
+    if isoniazid and rifampicin and has_fq and has_group_a_additional:
+        return "XDR"
+
+    if isoniazid and rifampicin and has_fq:
+        return "Pre-XDR"
+
+    if isoniazid and rifampicin:
+        return "MDR"
+
+    if rifampicin and not isoniazid:
+        return "RR-TB"
+
+    if isoniazid and not rifampicin:
+        return "HR-TB"
+
+    if len(drugs) == 1:
+        return "Monoresistance"
+
+    if len(drugs) > 1:
+        return "Other drug resistance"
+
+    if profile_raw and profile not in {"not reported", "unknown", "na", "n/a", "none"}:
+        return profile_raw
 
     return "Unknown"
 
 def badge(label):
     color = RESISTANCE_COLORS.get(label, RESISTANCE_COLORS["Unknown"])
-    return f'<span class="res-badge" style="background:{color};">{safe(label)}</span>'
+    text_color = "#111111" if label == "Monoresistance" else "#ffffff"
+    return f'<span class="res-badge" style="background:{color};color:{text_color} !important;">{safe(label)}</span>'
 
 def green_badge(label):
     return f'<span class="badge badge-green" style="background:#28A745 !important;color:white !important;font-weight:700;">{safe(label)}</span>'
@@ -2122,7 +2602,7 @@ def species_badge(label):
     if text == "mycobacterium tuberculosis":
         return (
             '<span class="badge" '
-            'style="background:#6F42C1 !important;color:white !important;font-weight:700;">'
+            'style="background:#c2e3f4 !important;color:#111111 !important;font-weight:700;">'
             f'{safe(label)}</span>'
         )
 
@@ -2268,7 +2748,7 @@ def build_tb_rows():
         f"<td>{safe(sample)}</td>"
         f"<td>{safe(species)}</td>"
         f"<td>{lineage}</td>"
-        f"<td>{badge(category)} &nbsp; {safe(dr_type)}</td>"
+        f"<td>{badge(category)}</td>"
         f"<td>{safe(resistant_drugs)}</td>"
         '<td><span class="badge badge-green" style="background:#28A745 !important;color:white !important;font-weight:700;">Selected</span></td>'
         "</tr>"
@@ -2321,10 +2801,13 @@ No mutations were detected or mutation analysis was skipped.
 def build_tree_legend():
     items = [
         ("Sensitive", RESISTANCE_COLORS["Sensitive"]),
-        ("Monoresistance / HR-TB / RR-TB", RESISTANCE_COLORS["Monoresistance"]),
+        ("Monoresistance", RESISTANCE_COLORS["Monoresistance"]),
+        ("HR-TB", RESISTANCE_COLORS["HR-TB"]),
+        ("RR-TB", RESISTANCE_COLORS["RR-TB"]),
         ("MDR", RESISTANCE_COLORS["MDR"]),
         ("Pre-XDR", RESISTANCE_COLORS["Pre-XDR"]),
         ("XDR", RESISTANCE_COLORS["XDR"]),
+        ("Other drug resistance", RESISTANCE_COLORS["Other drug resistance"]),
         ("Unknown", RESISTANCE_COLORS["Unknown"]),
     ]
 
@@ -2631,6 +3114,7 @@ pre{{
 <div class="note">
 <strong>Interpretation note:</strong> TB-Profiler is using WHO 2021+ definitions for classification of drug-resistance results.
 <strong>Key WHO 2021+ resistance definitions:</strong>
+<strong>Isoniazid-resistant, rifampicin-susceptible TB (HR-TB):</strong> resistant to isoniazid and not resistant to rifampicin.
 <strong>Rifampicin-resistant TB (RR-TB):</strong> resistant to rifampicin, with or without resistance to other drugs.
 <strong>Multidrug-resistant TB (MDR-TB):</strong> resistance to at least isoniazid and rifampicin.
 <strong>Pre-extensively drug-resistant TB (Pre-XDR-TB):</strong> MDR/RR-TB that is also resistant to any fluoroquinolone.
@@ -2642,10 +3126,13 @@ pre{{
 <select onchange="filterResistance(this.value)">
 <option value="">All resistance profiles</option>
 <option value="Sensitive">Sensitive only</option>
-<option value="Monoresistance">Monoresistance / HR-TB / RR-TB</option>
+<option value="Monoresistance">Monoresistance only</option>
+<option value="HR-TB">HR-TB only</option>
+<option value="RR-TB">RR-TB only</option>
 <option value="MDR">MDR only</option>
 <option value="Pre-XDR">Pre-XDR only</option>
 <option value="XDR">XDR only</option>
+<option value="Other drug resistance">Other drug resistance only</option>
 <option value="Unknown">Unknown only</option>
 </select>
 <button onclick="downloadCSV('tbTable','tbprofiler_summary.csv')">Download TB-Profiler CSV</button>
