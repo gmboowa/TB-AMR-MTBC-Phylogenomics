@@ -70,7 +70,7 @@ Integrated HTML report with downloadable surveillance outputs
 - **⬤ Mycobacteria species typing using Kraken2 + Bracken**  
 - **⬤ TB-Profiler-based MTBC species, lineage, sub-lineage & drug-resistance profiling**  
 - **⬤ WHO-aligned TB drug-resistance classification, including HR-TB, RR-TB, MDR-TB, Pre-XDR-TB & XDR-TB**  
-- **⬤ Mutation-level TB-Profiler resistance evidence reporting, including drug, gene, mutation/change, confidence & evidence fields** 
+- **⬤ Mutation-level TB-Profiler resistance evidence reporting, including drug, gene, mutation, confidence & evidence fields** 
 - **⬤ MTBC-only sample filtering before downstream phylogenomics**  
 - **⬤ Snippy-based reference-guided per-sample variant calling**  
 - **⬤ Mean-depth extraction & per-sample variant summary reporting**  
@@ -121,12 +121,12 @@ rMAP-TB/
 | Java | Required to run the Cromwell workflow engine |
 | Cromwell | Executes the WDL workflow locally or on supported backends |
 | Docker | Runs the containerized bioinformatics tools used by each WDL task |
-| Paired-end Illumina FASTQ files | Primary input sequencing data for trimming, QC, species typing, TB-Profiler, and variant calling |
+| Paired-end Illumina FASTQ files | Primary input sequencing data for trimming, QC, species typing, TB-Profiler & variant calling |
 | Adapter FASTA file | Required for Trimmomatic adapter trimming |
 | MTBC GenBank reference | Required for Snippy reference-guided variant calling & Snippy-core alignment |
 | Kraken2/Bracken Mycobacteria database | Required for Mycobacteria species typing; embedded in the workflow Docker image if using the recommended container |
 | TB-Profiler database | Required for MTBC lineage & drug-resistance profiling; provided within the TB-Profiler container |
-| Sufficient local compute resources | Needed for read processing, variant calling, SNP alignment, recombination filtering, phylogeny, and HTML report generation |
+| Sufficient local compute resources | Needed for read processing, variant calling, SNP alignment, recombination filtering, phylogeny & HTML report generation |
 
 ## Main workflow inputs
 
