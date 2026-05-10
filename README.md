@@ -78,19 +78,28 @@ Integrated HTML report with downloadable surveillance outputs
 ## Repository structure
 
 ```text
-TB-AMR-MTBC-Phylogenomics/
+rMAP-TB/
 ├── README.md
-├── TB.wdl
+├── LICENSE
+├── .dockstore.yml
+├── .gitignore
+├── rMAP_TB.wdl
 ├── examples/
 │   └── inputs.example.json
+├── resources/
+│   ├── adapters.fa
+│   ├── H37Rv.gb
+│   └── README.md
 └── docs/
     ├── index.html
     ├── DEPLOYMENT.md
     ├── reports/
-    │   ├── integrated_tb_report.html
-    │   └── tbprofiler_report.html
+    │   ├── training_dataset_1/
+    │   └── training_dataset_2/
     └── assets/
-        └── .gitkeep
+        ├── workflow/
+        ├── images/
+        └── css/
 ```
 
 ## Requirements
