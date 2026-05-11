@@ -106,8 +106,9 @@ rMAP-TB/
     ├── index.html
     ├── DEPLOYMENT.md
     ├── reports/
-    │   ├── training_dataset_1/
-    │   └── training_dataset_2/
+    │   ├── small_dataset/
+    │   ├── medium_dataset/
+    │   └── large_dataset/
     └── assets/
         ├── workflow/
         ├── images/
