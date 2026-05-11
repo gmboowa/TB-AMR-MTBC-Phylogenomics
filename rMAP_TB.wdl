@@ -161,6 +161,9 @@ workflow rMAP_TB {
   }
 
   # 10. IQ-TREE uses the Gubbins-filtered alignment when available; otherwise it uses Snippy core.full.aln.
+  #     Before IQ-TREE runs, samples with excessive missing, ambiguous, or gap-only
+  #     sequence content are removed from the alignment and written to
+  #     excluded_from_iqtree.tsv for transparent reporting in the final HTML.
   if (do_phylogeny && defined(SNIPPY_CORE_MTBC.core_full_alignment)) {
     call IQTREE2_PHYLOGENY {
       input:
@@ -169,7 +172,9 @@ workflow rMAP_TB {
         bootstrap_replicates = iqtree2_bootstraps,
         cpu = cpu_8,
         memory_gb = max_memory_gb,
-        midpoint_root_tree = midpoint_root_tree
+        midpoint_root_tree = midpoint_root_tree,
+        max_missing_fraction_for_tree = 0.50,
+        min_non_reference_samples_for_tree = 3
     }
   }
 
@@ -179,6 +184,8 @@ workflow rMAP_TB {
       input:
         input_tree = select_first([IQTREE2_PHYLOGENY.final_tree]),
         tbprofiler_summary_tsv = TB_PROFILER_AND_MTBC_FILTER.summary_tsv,
+        resistance_profile_summary_tsv = TB_PROFILER_AND_MTBC_FILTER.resistance_profile_summary_tsv,
+        iqtree_excluded_samples_tsv = IQTREE2_PHYLOGENY.excluded_from_iqtree,
         width = tree_width,
         height = tree_height,
         image_format = tree_image_format
@@ -199,33 +206,45 @@ workflow rMAP_TB {
   # 10. QC Filtering Rationale and Surveillance Metadata
   # 11. Pipeline Provenance and Software Versions
   call MERGE_TB_REPORTS {
-    input:
-      tbprofiler_html = TB_PROFILER_AND_MTBC_FILTER.combined_html,
-      tbprofiler_summary_tsv = TB_PROFILER_AND_MTBC_FILTER.summary_tsv,
-      tbprofiler_mutation_evidence_tsv = TB_PROFILER_AND_MTBC_FILTER.mutation_evidence_tsv,
-      tbprofiler_mutation_evidence_html = TB_PROFILER_AND_MTBC_FILTER.mutation_evidence_html,
-      mtbc_samples_txt = TB_PROFILER_AND_MTBC_FILTER.mtbc_samples_txt,
-      species_typing_html = SPECIES_TYPING.species_typing_html,
-      species_typing_tsv = SPECIES_TYPING.species_typing_tsv,
-      qc_summary_html = MULTIQC.multiqc_report,
-      trimming_report_html = TRIMMING.trimming_report,
-      variant_summary_html = SNIPPY_CORE_MTBC.variant_summary,
-      iqtree_report = IQTREE2_PHYLOGENY.iqtree_report,
-      tree_image = TREE_VISUALIZATION.tree_image,
-      phylogenetic_tree_newick = TREE_VISUALIZATION.cleaned_tree,
-      nonsynonymous_mutations_tsv = TB_DRUG_GENE_NONSYNONYMOUS_MUTATIONS.nonsynonymous_mutations_tsv,
-      nonsynonymous_mutations_html = TB_DRUG_GENE_NONSYNONYMOUS_MUTATIONS.nonsynonymous_mutations_html,
-      pairwise_snp_distance_matrix = SNP_DISTANCE_CLUSTERING.pairwise_snp_distance_matrix,
-      pairwise_snp_distance_pairs = SNP_DISTANCE_CLUSTERING.pairwise_snp_distance_pairs,
-      snp_cluster_summary = SNP_DISTANCE_CLUSTERING.snp_cluster_summary,
-      snp_distance_cluster_html = SNP_DISTANCE_CLUSTERING.snp_distance_cluster_html,
-      lineage_distribution_tsv = TB_SURVEILLANCE_SUMMARY_VISUALS.lineage_distribution_tsv,
-      lineage_distribution_svg = TB_SURVEILLANCE_SUMMARY_VISUALS.lineage_distribution_svg,
-      snp_distance_heatmap_svg = TB_SURVEILLANCE_SUMMARY_VISUALS.snp_distance_heatmap_svg,
-      surveillance_metadata_tsv = TB_SURVEILLANCE_SUMMARY_VISUALS.surveillance_metadata_tsv,
-      qc_filtering_rationale_tsv = TB_SURVEILLANCE_SUMMARY_VISUALS.qc_filtering_rationale_tsv,
-      surveillance_summary_html = TB_SURVEILLANCE_SUMMARY_VISUALS.surveillance_summary_html
-  }
+  input:
+    tbprofiler_html = TB_PROFILER_AND_MTBC_FILTER.combined_html,
+    tbprofiler_summary_tsv = TB_PROFILER_AND_MTBC_FILTER.summary_tsv,
+    resistance_profile_summary_tsv = TB_PROFILER_AND_MTBC_FILTER.resistance_profile_summary_tsv,
+    tbprofiler_mutation_evidence_tsv = TB_PROFILER_AND_MTBC_FILTER.mutation_evidence_tsv,
+    tbprofiler_mutation_evidence_html = TB_PROFILER_AND_MTBC_FILTER.mutation_evidence_html,
+    mtbc_samples_txt = TB_PROFILER_AND_MTBC_FILTER.mtbc_samples_txt,
+
+    species_typing_html = SPECIES_TYPING.species_typing_html,
+    species_typing_tsv = SPECIES_TYPING.species_typing_tsv,
+
+    qc_summary_html = MULTIQC.multiqc_report,
+    trimming_report_html = TRIMMING.trimming_report,
+    variant_summary_html = SNIPPY_CORE_MTBC.variant_summary,
+
+    iqtree_report = IQTREE2_PHYLOGENY.iqtree_report,
+    iqtree_excluded_samples_tsv = IQTREE2_PHYLOGENY.excluded_from_iqtree,
+    iqtree_included_samples_tsv = IQTREE2_PHYLOGENY.included_in_iqtree,
+    iqtree_filtering_summary_txt = IQTREE2_PHYLOGENY.alignment_filtering_summary,
+    iqtree_status = IQTREE2_PHYLOGENY.iqtree_status,
+
+    tree_image = TREE_VISUALIZATION.tree_image,
+    phylogenetic_tree_newick = TREE_VISUALIZATION.cleaned_tree,
+
+    nonsynonymous_mutations_tsv = TB_DRUG_GENE_NONSYNONYMOUS_MUTATIONS.nonsynonymous_mutations_tsv,
+    nonsynonymous_mutations_html = TB_DRUG_GENE_NONSYNONYMOUS_MUTATIONS.nonsynonymous_mutations_html,
+
+    pairwise_snp_distance_matrix = SNP_DISTANCE_CLUSTERING.pairwise_snp_distance_matrix,
+    pairwise_snp_distance_pairs = SNP_DISTANCE_CLUSTERING.pairwise_snp_distance_pairs,
+    snp_cluster_summary = SNP_DISTANCE_CLUSTERING.snp_cluster_summary,
+    snp_distance_cluster_html = SNP_DISTANCE_CLUSTERING.snp_distance_cluster_html,
+
+    lineage_distribution_tsv = TB_SURVEILLANCE_SUMMARY_VISUALS.lineage_distribution_tsv,
+    lineage_distribution_svg = TB_SURVEILLANCE_SUMMARY_VISUALS.lineage_distribution_svg,
+    snp_distance_heatmap_svg = TB_SURVEILLANCE_SUMMARY_VISUALS.snp_distance_heatmap_svg,
+    surveillance_metadata_tsv = TB_SURVEILLANCE_SUMMARY_VISUALS.surveillance_metadata_tsv,
+    qc_filtering_rationale_tsv = TB_SURVEILLANCE_SUMMARY_VISUALS.qc_filtering_rationale_tsv,
+    surveillance_summary_html = TB_SURVEILLANCE_SUMMARY_VISUALS.surveillance_summary_html
+}
 
   output {
     Array[File]? trimmed_reads = TRIMMING.trimmed_reads
@@ -688,7 +707,19 @@ task SPECIES_TYPING {
       exit 1
     fi
 
-    echo -e "Sample_ID\tSpecies_Identified\tEvidence" > species_typing/species_typing.tsv
+    ###########################################################################
+    # Species typing output
+    #
+    # MTBC_Supported is the explicit downstream-selection field.
+    #
+    # Downstream logic:
+    #   - TB_PROFILER_AND_MTBC_FILTER should select samples for Snippy/core-SNP/
+    #     IQ-TREE only when MTBC_Supported == YES.
+    #   - TB-Profiler species/lineage/resistance are annotations only and should
+    #     not determine phylogeny selection.
+    ###########################################################################
+
+    echo -e "Sample_ID\tSpecies_Identified\tEvidence\tMTBC_Supported\tMTBC_Reads\tMTBC_Percent\tSelection_Basis" > species_typing/species_typing.tsv
 
     for ((i=0; i<n; i+=2)); do
       r1="${files[$i]}"
@@ -722,31 +753,74 @@ task SPECIES_TYPING {
         --output "$output" \
         "$r1" "$r2"
 
+      #########################################################################
+      # Kraken2 report columns:
+      #   1 = percent
+      #   2 = reads assigned to clade
+      #   3 = reads assigned directly to taxon
+      #   4 = rank code
+      #   5 = NCBI taxid
+      #   6+ = taxon name
+      #
+      # TaxID 77643 is the Mycobacterium tuberculosis complex node.
+      #########################################################################
+
       top_species_line="$(awk '$4=="S"' "$report" | sort -k2,2nr | head -1 || true)"
       mtbc_line="$(awk '$4=="G1" && $5=="77643"' "$report" | head -1 || true)"
 
       if [ -z "$top_species_line" ]; then
         final_call="No species-level Mycobacterium call"
+        top_percent="0.00"
+        top_reads="0"
+        top_taxid="NA"
         evidence="No species-level Kraken2 assignment detected"
       else
         top_percent="$(echo "$top_species_line" | awk '{print $1}')"
         top_reads="$(echo "$top_species_line" | awk '{print $2}')"
         top_taxid="$(echo "$top_species_line" | awk '{print $5}')"
         top_species="$(echo "$top_species_line" | awk '{for(i=6;i<=NF;i++) printf $i (i<NF ? " " : "")}')"
-
-        if [ -n "$mtbc_line" ]; then
-          mtbc_percent="$(echo "$mtbc_line" | awk '{print $1}')"
-          mtbc_reads="$(echo "$mtbc_line" | awk '{print $2}')"
-        else
-          mtbc_percent="0.00"
-          mtbc_reads="0"
-        fi
-
         final_call="$top_species"
-        evidence="Top species-level assignment: ${top_species} (${top_reads} reads; ${top_percent}%); MTBC support: ${mtbc_reads} reads; ${mtbc_percent}%"
       fi
 
-      echo -e "${sample_id}\t${final_call}\t${evidence}" >> species_typing/species_typing.tsv
+      if [ -n "$mtbc_line" ]; then
+        mtbc_percent="$(echo "$mtbc_line" | awk '{print $1}')"
+        mtbc_reads="$(echo "$mtbc_line" | awk '{print $2}')"
+      else
+        mtbc_percent="0.00"
+        mtbc_reads="0"
+      fi
+
+      #########################################################################
+      # Explicit Kraken2/Bracken-based MTBC support logic.
+      #
+      # A sample is marked MTBC_Supported=YES when either:
+      #   1. Kraken2 reports reads at the MTBC complex node, taxid 77643; or
+      #   2. the top species-level call text is clearly M. tuberculosis.
+      #
+      # This field is the one downstream tasks should use for selecting samples
+      # for Snippy/core-SNP/IQ-TREE.
+      #########################################################################
+
+      final_call_lc="$(echo "$final_call" | tr '[:upper:]' '[:lower:]')"
+
+      if [ "$mtbc_reads" != "0" ] && [ "$mtbc_reads" != "0.00" ]; then
+        mtbc_supported="YES"
+        selection_basis="Selected for phylogeny because Kraken2 detected reads assigned to the MTBC complex node, NCBI taxid 77643"
+      elif echo "$final_call_lc" | grep -Eq "mycobacterium tuberculosis|m\. tuberculosis|mycobacterium tuberculosis complex|mtbc|tuberculosis complex"; then
+        mtbc_supported="YES"
+        selection_basis="Selected for phylogeny because the top Kraken2 species-level call supports MTBC"
+      else
+        mtbc_supported="NO"
+        selection_basis="Not selected for phylogeny because Kraken2/Bracken species typing did not support MTBC"
+      fi
+
+      if [ -z "$top_species_line" ]; then
+        evidence="No species-level Kraken2 assignment detected; MTBC support: ${mtbc_reads} reads; ${mtbc_percent}%"
+      else
+        evidence="Top species-level assignment: ${final_call} (${top_reads} reads; ${top_percent}%); MTBC support: ${mtbc_reads} reads; ${mtbc_percent}%"
+      fi
+
+      echo -e "${sample_id}\t${final_call}\t${evidence}\t${mtbc_supported}\t${mtbc_reads}\t${mtbc_percent}\t${selection_basis}" >> species_typing/species_typing.tsv
     done
 
     python3 <<'PY'
@@ -763,12 +837,30 @@ def species_badge(label):
     label = label or ""
     text = label.strip().lower()
 
-    if text == "mycobacterium tuberculosis":
+    if (
+        text == "mycobacterium tuberculosis"
+        or text == "mycobacterium tuberculosis complex"
+        or "mycobacterium tuberculosis" in text
+        or "tuberculosis complex" in text
+        or text == "mtbc"
+    ):
         return (
             '<span style="display:inline-block;'
             'padding:4px 8px;'
             'border-radius:999px;'
             'background:#6F42C1;'
+            'color:white;'
+            'font-size:12px;'
+            'font-weight:700;">'
+            f'{escape(label)}</span>'
+        )
+
+    if text == "no species-level mycobacterium call":
+        return (
+            '<span style="display:inline-block;'
+            'padding:4px 8px;'
+            'border-radius:999px;'
+            'background:#9CA3AF;'
             'color:white;'
             'font-size:12px;'
             'font-weight:700;">'
@@ -786,13 +878,46 @@ def species_badge(label):
         f'{escape(label)}</span>'
     )
 
+def mtbc_badge(value):
+    value = (value or "").strip().upper()
+
+    if value == "YES":
+        return (
+            '<span style="display:inline-block;'
+            'padding:4px 8px;'
+            'border-radius:999px;'
+            'background:#28A745;'
+            'color:white;'
+            'font-size:12px;'
+            'font-weight:700;">YES</span>'
+        )
+
+    return (
+        '<span style="display:inline-block;'
+        'padding:4px 8px;'
+        'border-radius:999px;'
+        'background:#DC2626;'
+        'color:white;'
+        'font-size:12px;'
+        'font-weight:700;">NO</span>'
+    )
+
 html = []
 html.append('<section class="card">')
 html.append('<h2>2. Species Typing using Kraken2 + Bracken</h2>')
 html.append('<p>Species typing was performed using Kraken2 against a custom Mycobacterium-only database embedded in the Docker image <code>gmboowa/mycobacterium-kraken2-bracken:2026.05</code>. The table reports the single most probable species-level call for each sample based on the highest species-level Kraken2 assignment and supporting taxonomic evidence.</p>')
+html.append('<p><strong>Phylogeny selection rule:</strong> samples are selected for downstream Snippy/core-SNP/IQ-TREE analysis only when Kraken2/Bracken supports MTBC. TB-Profiler species, lineage, and resistance are reported later as annotations but do not determine phylogeny selection.</p>')
 html.append('<div class="table-wrap">')
 html.append('<table>')
-html.append('<thead><tr><th>Sample ID</th><th>Species Identified</th><th>Evidence Supporting Call</th></tr></thead>')
+html.append('<thead><tr>')
+html.append('<th>Sample ID</th>')
+html.append('<th>Species Identified</th>')
+html.append('<th>Evidence Supporting Call</th>')
+html.append('<th>MTBC Supported</th>')
+html.append('<th>MTBC Reads</th>')
+html.append('<th>MTBC Percent</th>')
+html.append('<th>Selection Basis</th>')
+html.append('</tr></thead>')
 html.append('<tbody>')
 
 if rows:
@@ -802,10 +927,14 @@ if rows:
             f"<td>{escape(row.get('Sample_ID',''))}</td>"
             f"<td>{species_badge(row.get('Species_Identified',''))}</td>"
             f"<td>{escape(row.get('Evidence',''))}</td>"
+            f"<td>{mtbc_badge(row.get('MTBC_Supported',''))}</td>"
+            f"<td>{escape(row.get('MTBC_Reads',''))}</td>"
+            f"<td>{escape(row.get('MTBC_Percent',''))}</td>"
+            f"<td>{escape(row.get('Selection_Basis',''))}</td>"
             "</tr>"
         )
 else:
-    html.append('<tr><td colspan="3">No species typing results were generated.</td></tr>')
+    html.append('<tr><td colspan="7">No species typing results were generated.</td></tr>')
 
 html.append('</tbody></table></div></section>')
 
@@ -865,6 +994,7 @@ task TB_PROFILER_AND_MTBC_FILTER {
     fi
 
     echo -e "sample\tspecies\tmain_lineage\tsub_lineage\tdr_type\tresistant_drugs\tresistance_mutations\tkey_mutations\tjson_file\tmtbc_selected\tmtbc_selection_reason\tstatus" > tbprofiler_summary.tsv
+    echo -e "sample_id\tresistance_profile\tresistant_drugs\tresistance_mutations\tkey_mutations\tstatus" > resistance_profile_summary.tsv
     echo -e "sample\tdrug\tgene\tmutation\tchange\tconfidence\tevidence\tsource_json" > mutation_evidence/tbprofiler_mutation_evidence.tsv
     : > mtbc_samples.txt
 
@@ -935,20 +1065,43 @@ def clean_value(v):
                 out.append(y)
         return "; ".join(out)
     if isinstance(v, dict):
-        for key in ["name", "drug", "gene", "change", "mutation", "original_mutation", "confidence", "source", "evidence"]:
+        for key in [
+            "name", "drug", "gene", "change", "mutation",
+            "original_mutation", "confidence", "source", "evidence"
+        ]:
             if key in v and v[key] not in (None, "", [], {}):
                 return clean_value(v[key])
         return ""
     return str(v)
 
-def uniq(xs):
+def uniq_list(xs):
     seen = []
+    seen_lower = set()
     for x in xs:
-        x = str(x).strip()
-        if x and x.lower() not in ["none", "none reported", "not reported", "na", "n/a", "unknown"]:
-            if x not in seen:
-                seen.append(x)
-    return ", ".join(seen)
+        x = str(x or "").strip()
+        xl = x.lower()
+        if not x:
+            continue
+        if xl in ["none", "none reported", "not reported", "na", "n/a", "unknown"]:
+            continue
+        if xl not in seen_lower:
+            seen.append(x)
+            seen_lower.add(xl)
+    return seen
+
+def uniq(xs):
+    return ", ".join(uniq_list(xs))
+
+def safe_tsv(x):
+    return str(x or "").replace("\t", " ").replace("\n", " ").replace("\r", " ").strip()
+
+def normalize_sample_id(name):
+    s = str(name or "").strip()
+    s = s.split("/")[-1]
+    s = s.split("\\")[-1]
+    s = re.sub(r"(\.fastq\.gz|\.fq\.gz|\.fastq|\.fq|\.gz)$", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"(_R?1_paired|_R?2_paired|_R?1|_R?2|_1_paired|_2_paired|_1|_2|\.R?1|\.R?2|\.1|\.2)$", "", s)
+    return s.strip()
 
 def normalize_drug_name(x):
     s = str(x or "").strip().lower()
@@ -959,51 +1112,77 @@ def normalize_drug_name(x):
         "inh": "isoniazid",
         "isoniazid": "isoniazid",
         "h": "isoniazid",
+
         "rif": "rifampicin",
         "rmp": "rifampicin",
         "rifampin": "rifampicin",
         "rifampicin": "rifampicin",
         "r": "rifampicin",
+
         "pza": "pyrazinamide",
         "pyrazinamide": "pyrazinamide",
         "z": "pyrazinamide",
+
         "emb": "ethambutol",
         "ethambutol": "ethambutol",
         "e": "ethambutol",
+
         "sm": "streptomycin",
         "str": "streptomycin",
         "streptomycin": "streptomycin",
         "s": "streptomycin",
+
         "levo": "levofloxacin",
         "levofloxacin": "levofloxacin",
         "lfx": "levofloxacin",
+
         "moxi": "moxifloxacin",
         "moxifloxacin": "moxifloxacin",
         "mfx": "moxifloxacin",
+
         "ofx": "ofloxacin",
         "ofloxacin": "ofloxacin",
+
+        "gatifloxacin": "gatifloxacin",
+        "gfx": "gatifloxacin",
+
+        "ciprofloxacin": "ciprofloxacin",
+        "cfx": "ciprofloxacin",
+
         "amikacin": "amikacin",
         "amk": "amikacin",
+
         "kanamycin": "kanamycin",
         "kan": "kanamycin",
+
         "capreomycin": "capreomycin",
         "cap": "capreomycin",
+
         "bedaquiline": "bedaquiline",
         "bdq": "bedaquiline",
+
         "linezolid": "linezolid",
         "lzd": "linezolid",
+
         "clofazimine": "clofazimine",
         "cfz": "clofazimine",
+
         "ethionamide": "ethionamide",
         "eto": "ethionamide",
+
         "prothionamide": "prothionamide",
         "pto": "prothionamide",
+
         "cycloserine": "cycloserine",
         "cs": "cycloserine",
+
         "para aminosalicylic acid": "para-aminosalicylic acid",
+        "para-aminosalicylic acid": "para-aminosalicylic acid",
         "pas": "para-aminosalicylic acid",
+
         "delamanid": "delamanid",
         "dlm": "delamanid",
+
         "pretomanid": "pretomanid",
         "pa": "pretomanid",
     }
@@ -1030,113 +1209,21 @@ def split_drug_tokens(value):
 
         for part in txt.split(","):
             p = normalize_drug_name(part)
-            if p and p not in ["none", "none reported", "not reported", "susceptible", "sensitive", "na", "n/a", "unknown"]:
+            if p and p not in [
+                "none", "none reported", "not reported",
+                "susceptible", "sensitive", "na", "n/a", "unknown"
+            ]:
                 out.append(p)
 
     return out
-
-def classify_who_resistance(resistant_drugs, tbprofiler_drtype):
-    drugs = set()
-
-    for d in resistant_drugs:
-        for token in split_drug_tokens(d):
-            drugs.add(token)
-
-    drtype_text = str(tbprofiler_drtype or "").strip()
-    drtype_lower = drtype_text.lower()
-
-    if "xdr" in drtype_lower and "pre" not in drtype_lower:
-        return "XDR"
-
-    if "pre-xdr" in drtype_lower or "pre xdr" in drtype_lower:
-        return "Pre-XDR"
-
-    if "mdr" in drtype_lower:
-        return "MDR"
-
-    if re.search(r"\bhr[- ]?tb\b", drtype_lower):
-        return "HR-TB"
-
-    if re.search(r"\brr[- ]?tb\b", drtype_lower):
-        return "RR-TB"
-
-    isoniazid = "isoniazid" in drugs
-    rifampicin = "rifampicin" in drugs
-
-    fluoroquinolones = {
-        "levofloxacin",
-        "moxifloxacin",
-        "ofloxacin",
-        "gatifloxacin",
-        "ciprofloxacin"
-    }
-
-    group_a_additional = {
-        "bedaquiline",
-        "linezolid"
-    }
-
-    has_fq = bool(drugs.intersection(fluoroquinolones))
-    has_group_a_additional = bool(drugs.intersection(group_a_additional))
-
-    if isoniazid and rifampicin and has_fq and has_group_a_additional:
-        return "XDR"
-
-    if isoniazid and rifampicin and has_fq:
-        return "Pre-XDR"
-
-    if isoniazid and rifampicin:
-        return "MDR"
-
-    if rifampicin and not isoniazid:
-        return "RR-TB"
-
-    if isoniazid and not rifampicin:
-        return "HR-TB"
-
-    if len(drugs) == 1:
-        return "Monoresistance"
-
-    if len(drugs) > 1:
-        return "Other drug resistance"
-
-    return "No resistance detected by TB-Profiler"
-
-def get_kraken_support(sample, species_tsv):
-    kraken_species = ""
-    kraken_evidence = ""
-
-    if species_tsv and os.path.exists(species_tsv):
-        try:
-            with open(species_tsv) as sfh:
-                reader = csv.DictReader(sfh, delimiter="\t")
-                for row in reader:
-                    sid = row.get("Sample_ID") or row.get("sample") or row.get("sample_id") or ""
-                    if sid == sample:
-                        kraken_species = row.get("Species_Identified") or row.get("species") or row.get("Species identified") or ""
-                        kraken_evidence = row.get("Evidence") or row.get("evidence") or ""
-                        break
-        except Exception:
-            kraken_species = ""
-            kraken_evidence = ""
-
-    kraken_text = " ".join([kraken_species, kraken_evidence]).lower()
-
-    supports_mtbc = any(t in kraken_text for t in [
-        "mycobacterium tuberculosis",
-        "m. tuberculosis",
-        "mtbc",
-        "tuberculosis complex"
-    ])
-
-    return kraken_species, kraken_evidence, supports_mtbc
 
 def extract_drug_like_terms(text):
     known = [
         "isoniazid", "rifampicin", "rifampin", "pyrazinamide", "ethambutol",
         "streptomycin", "levofloxacin", "moxifloxacin", "ofloxacin",
-        "amikacin", "kanamycin", "capreomycin", "bedaquiline", "linezolid",
-        "clofazimine", "ethionamide", "prothionamide", "cycloserine",
+        "gatifloxacin", "ciprofloxacin", "amikacin", "kanamycin",
+        "capreomycin", "bedaquiline", "linezolid", "clofazimine",
+        "ethionamide", "prothionamide", "cycloserine",
         "para-aminosalicylic acid", "delamanid", "pretomanid"
     ]
 
@@ -1148,6 +1235,255 @@ def extract_drug_like_terms(text):
             hits.append(d)
 
     return hits
+
+def is_negative_or_non_resistance_text(value):
+    s = str(value or "").lower()
+    negative_terms = [
+        "susceptible",
+        "sensitive",
+        "not resistant",
+        "no resistance",
+        "benign",
+        "neutral",
+        "synonymous",
+        "phylogenetic",
+        "lineage marker",
+        "lineage_marker",
+        "low confidence",
+        "low_confidence",
+        "uncertain significance",
+        "unknown significance",
+        "not associated with resistance"
+    ]
+    return any(t in s for t in negative_terms)
+
+def is_positive_resistance_text(value):
+    s = str(value or "").lower()
+
+    if not s:
+        return False
+
+    if is_negative_or_non_resistance_text(s):
+        return False
+
+    positive_terms = [
+        "resistant",
+        "resistance",
+        "assoc w r",
+        "associated with resistance",
+        "confers resistance",
+        "predicted resistant",
+        "high confidence",
+        "moderate confidence",
+        '"r"',
+        "'r'"
+    ]
+
+    return any(t in s for t in positive_terms)
+
+def should_count_variant_for_who_classification(block_name, item, drug_values, confidence, evidence, source):
+    """
+    Count only canonical TB-Profiler resistance calls for classification.
+
+    Important:
+      - dr_variants and resistance_variants are treated as canonical resistance evidence.
+      - other_variants, candidate variants, lineage markers, synonymous/benign calls,
+        and low-confidence calls are not allowed to drive WHO classification.
+      - Mutation evidence may still be displayed in the evidence table, but only this
+        function determines which drugs enter WHO classification.
+    """
+    if not drug_values:
+        return False
+
+    block_lower = str(block_name or "").lower()
+
+    if block_lower in [
+        "other_variants",
+        "dr_variants_candidate",
+        "candidate_variants",
+        "variants",
+        "mutations"
+    ]:
+        return False
+
+    blob = " ".join([
+        json.dumps(item, sort_keys=True),
+        str(confidence or ""),
+        str(evidence or ""),
+        str(source or "")
+    ])
+
+    if is_negative_or_non_resistance_text(blob):
+        return False
+
+    if block_lower in ["dr_variants", "resistance_variants"]:
+        return True
+
+    return is_positive_resistance_text(blob)
+
+def classify_who_2021_tb_resistance(resistant_drugs, tbprofiler_drtype):
+    """
+    Exact WHO 2021+ hierarchy implemented for rMAP-TB.
+
+    The decision order is deliberately strict:
+
+      1. XDR-TB:
+         MDR/RR-TB plus resistance to any fluoroquinolone plus resistance to
+         bedaquiline or linezolid.
+
+      2. Pre-XDR-TB:
+         MDR/RR-TB plus resistance to any fluoroquinolone.
+
+      3. MDR-TB:
+         Resistance to at least rifampicin and isoniazid.
+
+      4. RR-TB:
+         Resistance to rifampicin, with or without resistance to other drugs,
+         but without isoniazid resistance if MDR criteria are not met.
+
+      5. Hr-TB:
+         Isoniazid-resistant and rifampicin-susceptible TB.
+
+      6. Monoresistance:
+         Resistance to exactly one anti-TB drug, excluding cases already classified
+         as RR-TB or Hr-TB.
+
+      7. Polyresistance:
+         Resistance to more than one anti-TB drug, excluding MDR-TB, RR-TB,
+         Pre-XDR-TB, and XDR-TB.
+
+      8. No resistance detected by TB-Profiler.
+
+    The function uses drug-level calls first. TB-Profiler drtype is used only
+    when no parseable drug-level calls are available.
+    """
+    drugs = set()
+
+    for d in resistant_drugs:
+        for token in split_drug_tokens(d):
+            drugs.add(token)
+
+    drtype_text = str(tbprofiler_drtype or "").strip()
+    drtype_lower = drtype_text.lower().replace("_", "-")
+
+    has_inh = "isoniazid" in drugs
+    has_rif = "rifampicin" in drugs
+
+    fluoroquinolones = {
+        "levofloxacin",
+        "moxifloxacin",
+        "ofloxacin",
+        "gatifloxacin",
+        "ciprofloxacin"
+    }
+
+    xdr_group_a_non_fq = {
+        "bedaquiline",
+        "linezolid"
+    }
+
+    has_fq = bool(drugs.intersection(fluoroquinolones))
+    has_bedaquiline_or_linezolid = bool(drugs.intersection(xdr_group_a_non_fq))
+
+    has_mdr_rr = has_rif
+
+    # WHO 2021+ priority order.
+    # This is the critical fix: XDR and Pre-XDR must be evaluated before
+    # Hr-TB, monoresistance, or polyresistance.
+    if has_mdr_rr and has_fq and has_bedaquiline_or_linezolid:
+        return "XDR-TB"
+
+    if has_mdr_rr and has_fq:
+        return "Pre-XDR-TB"
+
+    if has_rif and has_inh:
+        return "MDR-TB"
+
+    if has_rif:
+        return "RR-TB"
+
+    if has_inh and not has_rif:
+        return "Hr-TB"
+
+    if len(drugs) == 1:
+        return "Monoresistance"
+
+    if len(drugs) > 1:
+        return "Polyresistance"
+
+    # Fallback to TB-Profiler drtype only when no parseable drug-level calls exist.
+    if "xdr" in drtype_lower and "pre" not in drtype_lower:
+        return "XDR-TB"
+
+    if "pre-xdr" in drtype_lower or "pre xdr" in drtype_lower or "prexdr" in drtype_lower:
+        return "Pre-XDR-TB"
+
+    if "mdr" in drtype_lower:
+        return "MDR-TB"
+
+    if re.search(r"\brr[- ]?tb\b", drtype_lower) or "rifampicin-resistant" in drtype_lower or "rifampicin resistant" in drtype_lower:
+        return "RR-TB"
+
+    if re.search(r"\bhr[- ]?tb\b", drtype_lower) or "isoniazid-resistant" in drtype_lower or "isoniazid resistant" in drtype_lower:
+        return "Hr-TB"
+
+    if "mono" in drtype_lower:
+        return "Monoresistance"
+
+    if "poly" in drtype_lower:
+        return "Polyresistance"
+
+    return "No resistance detected by TB-Profiler"
+
+def get_kraken_support(sample, species_tsv):
+    kraken_species = ""
+    kraken_evidence = ""
+
+    normalized_sample = normalize_sample_id(sample)
+
+    if species_tsv and os.path.exists(species_tsv):
+        try:
+            with open(species_tsv) as sfh:
+                reader = csv.DictReader(sfh, delimiter="\t")
+                for row in reader:
+                    sid = (
+                        row.get("Sample_ID") or
+                        row.get("sample") or
+                        row.get("sample_id") or
+                        row.get("Sample ID") or
+                        ""
+                    )
+
+                    if normalize_sample_id(sid) == normalized_sample:
+                        kraken_species = (
+                            row.get("Species_Identified") or
+                            row.get("species") or
+                            row.get("Species identified") or
+                            row.get("Species") or
+                            ""
+                        )
+                        kraken_evidence = (
+                            row.get("Evidence") or
+                            row.get("evidence") or
+                            row.get("Kraken2_Bracken_Evidence") or
+                            ""
+                        )
+                        break
+        except Exception:
+            kraken_species = ""
+            kraken_evidence = ""
+
+    kraken_text = " ".join([kraken_species, kraken_evidence]).lower()
+
+    supports_mtbc = any(t in kraken_text for t in [
+        "mycobacterium tuberculosis",
+        "m. tuberculosis",
+        "mycobacterium tuberculosis complex",
+        "mtbc",
+        "tuberculosis complex"
+    ])
+
+    return kraken_species, kraken_evidence, supports_mtbc
 
 species = clean_value(get_path(data, [
     "species", "main_species", "taxon", "organism",
@@ -1166,23 +1502,42 @@ dr_type_raw = clean_value(get_path(data, [
     "drtype", "dr_type", "resistance_type", "drug_resistance_type", "prediction.drtype"
 ]))
 
-resistant_drugs = []
+# This list is used for WHO classification.
+# It must contain only canonical TB-Profiler resistant-drug calls.
+resistant_drugs_for_classification = []
+
+# This list is used for display and should mirror classification drugs, not all mutation-associated drugs.
+resistant_drugs_display_values = []
+
 resistance_mutations = []
 key_mutations = []
 mutation_evidence_rows = []
 
 variant_blocks = []
 
-for key in ["dr_variants", "other_variants", "variants", "dr_variants_candidate", "resistance_variants", "mutations"]:
+for key in [
+    "dr_variants",
+    "resistance_variants",
+    "other_variants",
+    "dr_variants_candidate",
+    "candidate_variants",
+    "variants",
+    "mutations"
+]:
     block = data.get(key, [])
 
     if isinstance(block, dict):
         block = list(block.values())
 
     if isinstance(block, list):
-        variant_blocks.extend([x for x in block if isinstance(x, dict)])
+        for x in block:
+            if isinstance(x, dict):
+                x["_rmap_tb_source_block"] = key
+                variant_blocks.append(x)
 
 for item in variant_blocks:
+    source_block = item.get("_rmap_tb_source_block", "")
+
     gene = clean_value(item.get("gene") or item.get("locus_tag") or item.get("locus") or "")
     change = clean_value(
         item.get("change") or
@@ -1218,7 +1573,7 @@ for item in variant_blocks:
     source = clean_value(
         item.get("source") or
         item.get("catalogue") or
-        item.get("database") or ""
+        item.get("database") or source_block or ""
     )
 
     if gene or change:
@@ -1234,9 +1589,25 @@ for item in variant_blocks:
     else:
         drug_values = extract_drug_like_terms(evidence)
 
+    count_for_who = should_count_variant_for_who_classification(
+        source_block,
+        item,
+        drug_values,
+        confidence,
+        evidence,
+        source
+    )
+
+    normalized_drugs = []
     for d in drug_values:
-        if d:
-            resistant_drugs.append(d)
+        for token in split_drug_tokens(d):
+            if token:
+                normalized_drugs.append(token)
+
+    if count_for_who:
+        for d in normalized_drugs:
+            resistant_drugs_for_classification.append(d)
+            resistant_drugs_display_values.append(d)
 
     drug_for_row = "; ".join(drug_values) if drug_values else "No drug assignment reported"
 
@@ -1268,6 +1639,8 @@ for item in variant_blocks:
             json_file
         ])
 
+# Parse structured drug-level phenotype tables if present.
+# These are allowed to drive WHO classification only when the item clearly reports resistance.
 for key in ["drug_table", "drugs", "resistance"]:
     block = data.get(key)
 
@@ -1275,19 +1648,29 @@ for key in ["drug_table", "drugs", "resistance"]:
         for drug, val in block.items():
             s = json.dumps(val).lower() if isinstance(val, (dict, list)) else str(val).lower()
 
-            if any(x in s for x in ["resistant", '"r"', "assoc w r", "high confidence"]):
-                resistant_drugs.append(str(drug))
+            if is_positive_resistance_text(s):
+                for token in split_drug_tokens(drug):
+                    resistant_drugs_for_classification.append(token)
+                    resistant_drugs_display_values.append(token)
 
     elif isinstance(block, list):
         for item in block:
             if not isinstance(item, dict):
                 continue
 
-            drug = clean_value(item.get("drug") or item.get("name") or item.get("Drug") or "")
+            drug = clean_value(
+                item.get("drug") or
+                item.get("name") or
+                item.get("Drug") or
+                item.get("drug_name") or ""
+            )
+
             s = json.dumps(item).lower()
 
-            if drug and any(x in s for x in ["resistant", '"r"', "assoc w r", "high confidence"]):
-                resistant_drugs.append(drug)
+            if drug and is_positive_resistance_text(s):
+                for token in split_drug_tokens(drug):
+                    resistant_drugs_for_classification.append(token)
+                    resistant_drugs_display_values.append(token)
 
 kraken_species, kraken_evidence, kraken_supports_mtbc = get_kraken_support(sample, species_tsv)
 
@@ -1295,15 +1678,17 @@ raw_lineage_text_for_interpretation = " ".join([main_lineage, sub_lineage]).lowe
 has_tbprofiler_lineage = bool(
     re.search(r"(^|[^a-z0-9])(lineage)?[ _-]?[1-9](\.|$|[^0-9])", raw_lineage_text_for_interpretation)
 )
+
 has_tbprofiler_species = bool(species)
 
 meaningful_drtype = str(dr_type_raw or "").strip().lower() not in [
     "", "none", "not reported", "unknown", "na", "n/a", "susceptible", "sensitive"
 ]
 
-has_resistance_evidence = bool(uniq(resistant_drugs)) or bool(uniq(resistance_mutations)) or meaningful_drtype
+canonical_resistant_drugs = uniq_list(resistant_drugs_for_classification)
+has_resistance_evidence = bool(canonical_resistant_drugs) or meaningful_drtype
 
-dr_type = classify_who_resistance(resistant_drugs, dr_type_raw)
+dr_type = classify_who_2021_tb_resistance(canonical_resistant_drugs, dr_type_raw)
 
 if status != "success":
     dr_type = "Resistance not determined by TB-Profiler"
@@ -1349,69 +1734,55 @@ if not mutation_evidence_rows:
 
 with open("mutation_evidence/tbprofiler_mutation_evidence.tsv", "a") as me:
     for row in mutation_evidence_rows:
-        me.write("\t".join([str(x).replace("\t", " ").replace("\n", " ") for x in row]) + "\n")
+        me.write("\t".join([safe_tsv(x) for x in row]) + "\n")
 
-text_species = species.lower()
+###########################################################################
+# Kraken2/Bracken-based MTBC selection for downstream phylogenomics
+#
+# IMPORTANT:
+#   - This is the only logic that determines mtbc_selected, mtbc_reads,
+#     and mtbc_samples.txt.
+#   - TB-Profiler species and lineage are retained as report annotations only.
+#   - TB-Profiler must not select samples for Snippy/core-SNP/IQ-TREE.
+#   - IQTREE2_PHYLOGENY later applies a second-stage alignment-quality filter.
+###########################################################################
 
-mtbc_species_terms = [
-    "mycobacterium tuberculosis", "m. tuberculosis",
-    "mycobacterium bovis", "m. bovis",
-    "mycobacterium africanum", "m. africanum",
-    "mycobacterium caprae", "m. caprae",
-    "mycobacterium microti", "m. microti",
-    "mycobacterium canettii", "m. canettii",
-    "mycobacterium pinnipedii", "m. pinnipedii",
-    "mtbc", "tuberculosis complex"
-]
-
-generic_non_mtbc_labels = [
-    "non-mtb",
-    "non mtb",
-    "not classified as mtbc",
-    "not mtbc",
-    "non-mtbc",
-    "non mtbc"
-]
-
-explicit_non_mtbc = (
-    bool(species)
-    and not any(t in text_species for t in mtbc_species_terms)
-    and not any(t in text_species for t in generic_non_mtbc_labels)
-)
-
-lineage_text = " ".join([main_lineage, sub_lineage]).lower().strip()
-
-valid_lineage = bool(
-    re.search(r"(^|[^a-z0-9])(lineage)?[ _-]?[1-9](\.|$|[^0-9])", lineage_text)
-)
-
-if any(t in text_species for t in mtbc_species_terms):
+if kraken_supports_mtbc:
     is_mtbc = True
-    reason = "MTBC species reported by TB-Profiler"
-elif not species and valid_lineage:
-    is_mtbc = True
-    reason = "Species absent, but valid TB-Profiler MTBC lineage reported"
-elif kraken_supports_mtbc:
-    is_mtbc = True
-    reason = "MTBC supported by Kraken2/Bracken species typing"
+
+    if has_tbprofiler_lineage:
+        reason = "Selected for phylogeny because Kraken2/Bracken species typing supports MTBC; TB-Profiler lineage reported"
+    else:
+        reason = "Selected for phylogeny because Kraken2/Bracken species typing supports MTBC; TB-Profiler lineage not resolved"
 else:
     is_mtbc = False
-    reason = "No recognized MTBC species, valid TB-Profiler lineage, or Kraken2/Bracken MTBC support"
 
-if explicit_non_mtbc and not kraken_supports_mtbc:
-    is_mtbc = False
-    reason = "Explicit non-MTBC species reported"
+    if species_tsv and os.path.exists(species_tsv):
+        if kraken_species or kraken_evidence:
+            reason = "Not selected for phylogeny because Kraken2/Bracken species typing did not support MTBC"
+        else:
+            reason = "Not selected for phylogeny because no matching Kraken2/Bracken species-typing result supported MTBC"
+    else:
+        reason = "Not selected for phylogeny because Kraken2/Bracken species-typing results were not provided"
 
 species_display = species
 
-if not species_display and kraken_supports_mtbc:
-    species_display = "Mycobacterium tuberculosis complex (supported by Kraken2/Bracken; TB-Profiler lineage not resolved)"
-elif species_display.lower() in generic_non_mtbc_labels and kraken_supports_mtbc:
-    species_display = "Mycobacterium tuberculosis complex (supported by Kraken2/Bracken; TB-Profiler lineage not resolved)"
-elif not species_display and is_mtbc:
-    species_display = "Mycobacterium tuberculosis complex (inferred from TB-Profiler lineage)"
-elif not species_display and not is_mtbc:
-    species_display = "Non-MTB / not classified as MTBC"
+if kraken_supports_mtbc:
+    if has_tbprofiler_lineage:
+        if species_display:
+            species_display = f"{species_display} (Kraken2/Bracken supports MTBC; TB-Profiler lineage reported)"
+        else:
+            species_display = "Mycobacterium tuberculosis complex (supported by Kraken2/Bracken species typing; TB-Profiler lineage reported)"
+    else:
+        if species_display:
+            species_display = f"{species_display} (Kraken2/Bracken supports MTBC; TB-Profiler lineage not resolved)"
+        else:
+            species_display = "Mycobacterium tuberculosis complex (supported by Kraken2/Bracken species typing; TB-Profiler lineage not resolved)"
+else:
+    if species_display:
+        species_display = f"{species_display} (not selected for phylogeny; Kraken2/Bracken did not support MTBC)"
+    else:
+        species_display = "Non-MTB / not classified as MTBC by Kraken2/Bracken"
 
 if is_mtbc:
     os.makedirs("mtbc_reads", exist_ok=True)
@@ -1430,15 +1801,19 @@ if str(main_lineage_display).strip().lower() in ["not reported", "unknown", "non
 if str(sub_lineage_display).strip().lower() in ["not reported", "unknown", "none", "na", "n/a"]:
     sub_lineage_display = "Not resolved by TB-Profiler"
 
+resistant_drugs_display = uniq(canonical_resistant_drugs) or "None reported"
+resistance_mutations_display = uniq(resistance_mutations) or "None reported"
+key_mutations_display = uniq(key_mutations) or "None reported"
+
 line = [
     sample,
     species_display or "Not reported",
     main_lineage_display,
     sub_lineage_display,
     dr_type or "Not reported",
-    uniq(resistant_drugs) or "None reported",
-    uniq(resistance_mutations) or "None reported",
-    uniq(key_mutations) or "None reported",
+    resistant_drugs_display,
+    resistance_mutations_display,
+    key_mutations_display,
     json_file,
     "YES" if is_mtbc else "NO",
     reason,
@@ -1446,7 +1821,19 @@ line = [
 ]
 
 with open("tbprofiler_summary.tsv", "a") as out:
-    out.write("\t".join(line) + "\n")
+    out.write("\t".join([safe_tsv(x) for x in line]) + "\n")
+
+resistance_profile_line = [
+    sample,
+    dr_type or "Not reported",
+    resistant_drugs_display,
+    resistance_mutations_display,
+    key_mutations_display,
+    status
+]
+
+with open("resistance_profile_summary.tsv", "a") as rout:
+    rout.write("\t".join([safe_tsv(x) for x in resistance_profile_line]) + "\n")
 PYTB
     done
 
@@ -1464,8 +1851,8 @@ cols = [
     ("resistant_drugs", "Predicted resistant drugs"),
     ("resistance_mutations", "Resistance-associated mutations"),
     ("key_mutations", "All key mutations"),
-    ("mtbc_selected", "Selected for SNP tree"),
-    ("mtbc_selection_reason", "Selection reason"),
+    ("mtbc_selected", "Selected for SNP tree by Kraken2/Bracken"),
+    ("mtbc_selection_reason", "Kraken2/Bracken selection reason"),
     ("status", "TB-Profiler status")
 ]
 
@@ -1494,7 +1881,10 @@ out = [
     "<title>TB-Profiler MTBC AMR report</title>",
     "<style>" + css + "</style></head><body>",
     "<div class='card'><h1>TB-Profiler drug-resistance, species and lineage report</h1>",
-    "<p class='muted'>This table summarizes TB-Profiler JSON outputs, resistance-associated mutations, and MTBC-positive samples for downstream core-SNP phylogenomics.</p></div>",
+    "<p class='muted'>This table summarizes TB-Profiler JSON outputs, resistance-associated mutations, and Kraken2/Bracken-based MTBC sample selection for downstream core-SNP phylogenomics. TB-Profiler species and lineage are reported as annotations only and do not determine SNP-tree inclusion.</p>",
+    "<p class='muted'><strong>Phylogeny selection rule:</strong> samples are selected for Snippy/core-SNP/IQ-TREE only when Kraken2/Bracken species typing supports MTBC. IQ-TREE may later exclude selected samples from the final tree if their core-SNP alignment has excessive missing, ambiguous, or gap content.</p>",
+    "<p class='muted'><strong>WHO 2021+ classification rule used:</strong> XDR-TB = MDR/RR-TB plus fluoroquinolone resistance plus bedaquiline or linezolid resistance; Pre-XDR-TB = MDR/RR-TB plus fluoroquinolone resistance; MDR-TB = rifampicin plus isoniazid resistance; RR-TB = rifampicin resistance without MDR criteria; Hr-TB = isoniazid resistance without rifampicin resistance.</p>",
+    "</div>",
     "<div class='card'><table><thead><tr>"
 ]
 
@@ -1552,7 +1942,7 @@ out = [
     "<title>TB-Profiler mutation-level resistance evidence</title>",
     "<style>" + css + "</style></head><body>",
     "<div class='card'><h1>Resistance Mutation Evidence Summary</h1>",
-    "<p class='muted'>This table extracts mutation-level drug-resistance evidence from TB-Profiler JSON outputs, including drug or evidence source, gene, mutation/change, confidence, and evidence fields where reported.</p></div>",
+    "<p class='muted'>This table extracts mutation-level drug-resistance evidence from TB-Profiler JSON outputs, including drug or evidence source, gene, mutation/change, confidence, and evidence fields where reported. Classification is not inferred from candidate, benign, lineage, synonymous, or low-confidence evidence rows.</p></div>",
     "<div class='card'><table><thead><tr>",
     "<th>Sample ID</th>",
     "<th>Drug / Evidence source</th>",
@@ -1603,6 +1993,7 @@ PYMUTHTML
     Array[File] tbprofiler_logs = glob("logs/*.tbprofiler.log")
     File tbprofiler_command_log = "logs/tbprofiler.command.log"
     File summary_tsv = "tbprofiler_summary.tsv"
+    File resistance_profile_summary_tsv = "resistance_profile_summary.tsv"
     File combined_html = "tbprofiler_combined_report.html"
     File mutation_evidence_tsv = "mutation_evidence/tbprofiler_mutation_evidence.tsv"
     File mutation_evidence_html = "mutation_evidence/tbprofiler_mutation_evidence.html"
@@ -1610,11 +2001,16 @@ PYMUTHTML
     Array[File] mtbc_reads = glob("mtbc_reads/*.fastq.gz")
   }
 }
-
 task SNIPPY_CORE_MTBC {
   input {
     String docker_image = "staphb/snippy:4.6.0"
+
+    # These reads should already be filtered upstream by TB_PROFILER_AND_MTBC_FILTER.
+    # Selection for this task is Kraken2/Bracken-based, not TB-Profiler-based.
+    # TB-Profiler species/lineage/resistance are annotations only and must not
+    # determine which samples enter this task.
     Array[File]+ input_reads
+
     File reference_genome
     String reference_type = "genbank"
     Int cpu = 8
@@ -1625,6 +2021,12 @@ task SNIPPY_CORE_MTBC {
   command <<<
     set -uo pipefail
     mkdir -p snippy_results snippy_core logs
+
+    echo "SNIPPY_CORE_MTBC started." > logs/snippy.command.log
+    echo "Selection rule: input_reads are expected to be Kraken2/Bracken-selected MTBC reads from TB_PROFILER_AND_MTBC_FILTER.mtbc_reads." >> logs/snippy.command.log
+    echo "TB-Profiler species, lineage, and resistance annotations do not determine entry into this task." >> logs/snippy.command.log
+    echo "IQTREE2_PHYLOGENY will later apply alignment-quality filtering before final tree inference." >> logs/snippy.command.log
+    echo "" >> logs/snippy.command.log
 
     if command -v snippy >/dev/null 2>&1; then
       SNIPPY_BIN="$(command -v snippy)"
@@ -1640,6 +2042,12 @@ task SNIPPY_CORE_MTBC {
     else
       SNIPPY_CORE_BIN="snippy-core"
     fi
+
+    echo "Using snippy: ${SNIPPY_BIN}" >> logs/snippy.command.log
+    echo "Using snippy-core: ${SNIPPY_CORE_BIN}" >> logs/snippy.command.log
+    echo "Minimum variant quality: ~{min_quality}" >> logs/snippy.command.log
+    echo "CPU threads: ~{cpu}" >> logs/snippy.command.log
+    echo "" >> logs/snippy.command.log
 
     if command -v samtools >/dev/null 2>&1; then
       echo "samtools detected:" > logs/samtools.version.log
@@ -1661,13 +2069,22 @@ task SNIPPY_CORE_MTBC {
     files=(~{sep=' ' input_reads})
     n=${#files[@]}
 
+    echo "Number of Kraken2/Bracken-selected MTBC FASTQ files received: ${n}" >> logs/snippy.command.log
+
     if [ $((n % 2)) -ne 0 ]; then
       echo "ERROR: MTBC reads must be paired R1/R2 files." >&2
+      echo "ERROR: Odd number of input FASTQ files received by SNIPPY_CORE_MTBC." >> logs/snippy.command.log
       exit 1
     fi
 
-    echo -e "sample\tstatus\tvcf\taligned_fasta" > variant_summary.tsv
+    paired_count=$((n / 2))
+    echo "Number of Kraken2/Bracken-selected paired MTBC samples received: ${paired_count}" >> logs/snippy.command.log
+    echo "" >> logs/snippy.command.log
+
+    echo -e "sample\tstatus\tvcf\taligned_fasta\tselection_basis" > variant_summary.tsv
     echo -e "Sample\tMeanDepth" > mean_depth_summary.tsv
+    echo -e "Sample\tSelectedForSnippyCore\tSelectionBasis" > snippy_core_selection_summary.tsv
+
     successful_samples=()
 
     for ((i=0; i<n; i+=2)); do
@@ -1676,7 +2093,10 @@ task SNIPPY_CORE_MTBC {
       sample=$(basename "$R1" | sed -E 's/(\.fastq\.gz|\.fq\.gz|\.fastq|\.fq)$//' | sed -E 's/(_R?1|_1|\.R?1|\.1)(_|$).*//')
       outdir="snippy_results/${sample}"
 
+      selection_basis="Selected for Snippy/core-SNP analysis because upstream Kraken2/Bracken species typing supported MTBC"
+
       echo "Running snippy for ${sample}" >> logs/snippy.command.log
+      echo -e "${sample}\tYES\t${selection_basis}" >> snippy_core_selection_summary.tsv
 
       if "$SNIPPY_BIN" \
         --cpus ~{cpu} \
@@ -1723,14 +2143,14 @@ task SNIPPY_CORE_MTBC {
         depth="NA"
       fi
 
-      echo -e "${sample}\t${status}\t${vcf}\t${aln}" >> variant_summary.tsv
+      echo -e "${sample}\t${status}\t${vcf}\t${aln}\t${selection_basis}" >> variant_summary.tsv
       echo -e "${sample}\t${depth}" >> mean_depth_summary.tsv
     done
 
     core_status="skipped"
 
     if [ ${#successful_samples[@]} -ge 2 ]; then
-      echo "Running snippy-core on ${#successful_samples[@]} samples" >> logs/snippy.command.log
+      echo "Running snippy-core on ${#successful_samples[@]} successfully processed Kraken2/Bracken-selected MTBC samples" >> logs/snippy.command.log
 
       if "$SNIPPY_CORE_BIN" --ref "$ref" --prefix snippy_core/core "${successful_samples[@]}" >> logs/snippy_core.log 2>&1; then
         core_status="success"
@@ -1739,8 +2159,10 @@ task SNIPPY_CORE_MTBC {
         echo "WARNING: snippy-core failed" >> logs/snippy.command.log
       fi
     else
-      echo "WARNING: fewer than 2 successful samples, skipping snippy-core" >> logs/snippy.command.log
+      echo "WARNING: fewer than 2 successful Kraken2/Bracken-selected MTBC samples, skipping snippy-core" >> logs/snippy.command.log
     fi
+
+    echo "Snippy-core status: ${core_status}" >> logs/snippy.command.log
 
     if [ ! -f mean_depth_summary.tsv ]; then
       echo -e "Sample\tMeanDepth" > mean_depth_summary.tsv
@@ -1762,6 +2184,20 @@ try:
 except Exception:
     depth_by_sample = {}
 
+selection_rows = []
+try:
+    with open("snippy_core_selection_summary.tsv") as fh:
+        selection_rows = list(csv.DictReader(fh, delimiter="\t"))
+except Exception:
+    selection_rows = []
+
+selection_basis_by_sample = {}
+for r in selection_rows:
+    sample = r.get("Sample") or ""
+    basis = r.get("SelectionBasis") or ""
+    if sample:
+        selection_basis_by_sample[sample] = basis
+
 out = """<!doctype html>
 <html>
 <head>
@@ -1774,13 +2210,31 @@ th,td{border:1px solid #ddd;padding:8px;vertical-align:top}
 th{background:#1d4ed8;color:white}
 .ok{color:#166534;font-weight:bold}
 .fail{color:#b91c1c;font-weight:bold}
+.note{background:#eef6ff;border-left:5px solid #2563eb;padding:12px;border-radius:10px;margin:12px 0;line-height:1.45}
+.badge-green{display:inline-block;border-radius:999px;padding:4px 8px;background:#28A745;color:white;font-size:12px;font-weight:700}
+.badge-red{display:inline-block;border-radius:999px;padding:4px 8px;background:#b91c1c;color:white;font-size:12px;font-weight:700}
 </style>
 </head>
 <body>
 <h1>MTBC core-SNP variant-calling summary</h1>
+
+<div class="note">
+<strong>Selection rule:</strong> samples entering this Snippy/core-SNP task were selected upstream using Kraken2/Bracken MTBC support from the species-typing step. TB-Profiler species, lineage, and resistance outputs are annotations only and do not determine which samples enter Snippy/core-SNP/IQ-TREE analysis.
+<br><br>
+<strong>Second-stage tree filtering:</strong> IQTREE2_PHYLOGENY may later exclude selected samples from final IQ-TREE inference if the core-SNP alignment has no usable A/C/G/T bases or excessive missing, ambiguous, or gap content.
+</div>
+
 <table>
 <thead>
-<tr><th>Sample</th><th>Status</th><th>Mean depth</th><th>VCF</th><th>Aligned FASTA</th></tr>
+<tr>
+<th>Sample</th>
+<th>Status</th>
+<th>Mean depth</th>
+<th>Selected for Snippy/core-SNP by Kraken2/Bracken</th>
+<th>Selection basis</th>
+<th>VCF</th>
+<th>Aligned FASTA</th>
+</tr>
 </thead>
 <tbody>
 """
@@ -1790,7 +2244,19 @@ for r in rows:
     cls = "ok" if status == "success" else "fail"
     sample = r["sample"]
     mean_depth = depth_by_sample.get(sample, "NA")
-    out += f"<tr><td>{html.escape(sample)}</td><td class='{cls}'>{html.escape(status)}</td><td>{html.escape(mean_depth)}</td><td>{html.escape(r['vcf'])}</td><td>{html.escape(r['aligned_fasta'])}</td></tr>\n"
+    selection_basis = r.get("selection_basis") or selection_basis_by_sample.get(sample, "Selected upstream by Kraken2/Bracken MTBC support")
+
+    out += (
+        "<tr>"
+        f"<td>{html.escape(sample)}</td>"
+        f"<td class='{cls}'>{html.escape(status)}</td>"
+        f"<td>{html.escape(mean_depth)}</td>"
+        "<td><span class='badge-green'>YES</span></td>"
+        f"<td>{html.escape(selection_basis)}</td>"
+        f"<td>{html.escape(r['vcf'])}</td>"
+        f"<td>{html.escape(r['aligned_fasta'])}</td>"
+        "</tr>\n"
+    )
 
 out += "</tbody></table></body></html>"
 
@@ -1816,6 +2282,7 @@ PY
 
     File variant_summary = "variant_summary.html"
     File mean_depth_summary_tsv = "mean_depth_summary.tsv"
+    File snippy_core_selection_summary_tsv = "snippy_core_selection_summary.tsv"
 
     File? core_full_alignment = "snippy_core/core.full.aln"
     File? core_snp_alignment = "snippy_core/core.aln"
@@ -1823,7 +2290,6 @@ PY
     File? core_vcf = "snippy_core/core.vcf"
   }
 }
-
 
 task TB_DRUG_GENE_NONSYNONYMOUS_MUTATIONS {
   input {
@@ -2023,10 +2489,88 @@ task SNP_DISTANCE_CLUSTERING {
     echo "Running fail-safe pure-Python SNP distance clustering on core.full.aln" > logs/snp_distance.command.log
     echo "Reference/non-sample sequences are excluded from sample-level SNP distance and cluster reporting." >> logs/snp_distance.command.log
 
-    apt-get update >/dev/null 2>&1 || true
-    apt-get install -y python3-pip >/dev/null 2>&1 || true
+    echo "Detecting system architecture and CPU features..." >> logs/snp_distance.command.log
 
-    pip3 install --quiet pandas matplotlib seaborn numpy || true
+    ARCH="$(uname -m)"
+    echo "Architecture detected: ${ARCH}" >> logs/snp_distance.command.log
+
+    if command -v lscpu >/dev/null 2>&1; then
+      CPU_FLAGS="$(lscpu | grep -i 'Flags' || true)"
+    else
+      CPU_FLAGS="$(cat /proc/cpuinfo | grep -m1 -i 'flags' || true)"
+    fi
+
+    echo "CPU flags detected:" >> logs/snp_distance.command.log
+    echo "${CPU_FLAGS}" >> logs/snp_distance.command.log
+
+    apt-get update >/dev/null 2>&1 || true
+    apt-get install -y --no-install-recommends \
+      python3-pip \
+      python3-dev \
+      build-essential \
+      >/dev/null 2>&1 || true
+
+    python3 -m pip install --upgrade pip setuptools wheel >/dev/null 2>&1 || true
+
+    if [ "${ARCH}" = "x86_64" ]; then
+      echo "Using Intel/x86_64-safe Python package installation..." >> logs/snp_distance.command.log
+
+      # Helps avoid illegal-instruction crashes from optimized BLAS/NumPy builds
+      export OPENBLAS_CORETYPE=Haswell
+      export NUMPY_EXPERIMENTAL_ARRAY_FUNCTION=0
+
+      python3 -m pip install --quiet \
+        "numpy<2.0" \
+        "pandas<2.2" \
+        "matplotlib<3.9" \
+        "seaborn<0.13" \
+        || {
+          echo "WARNING: Standard x86_64 pip install failed. Retrying with no binary for numpy..." >> logs/snp_distance.command.log
+          python3 -m pip install --quiet --no-binary=numpy "numpy<2.0" || true
+          python3 -m pip install --quiet "pandas<2.2" "matplotlib<3.9" "seaborn<0.13" || true
+        }
+
+    elif [ "${ARCH}" = "aarch64" ] || [ "${ARCH}" = "arm64" ]; then
+      echo "Using ARM64/aarch64-safe Python package installation..." >> logs/snp_distance.command.log
+
+      python3 -m pip install --quiet \
+        "numpy<2.0" \
+        "pandas<2.2" \
+        "matplotlib<3.9" \
+        "seaborn<0.13" \
+        || {
+          echo "WARNING: ARM64 pip install failed. Retrying with source-compatible installation..." >> logs/snp_distance.command.log
+          python3 -m pip install --quiet --no-binary=numpy "numpy<2.0" || true
+          python3 -m pip install --quiet "pandas<2.2" "matplotlib<3.9" "seaborn<0.13" || true
+        }
+
+    else
+      echo "Unknown architecture: ${ARCH}. Using conservative package installation..." >> logs/snp_distance.command.log
+
+      python3 -m pip install --quiet \
+        "numpy<2.0" \
+        "pandas<2.2" \
+        "matplotlib<3.9" \
+        "seaborn<0.13" \
+        || true
+    fi
+
+    echo "Checking Python package imports..." >> logs/snp_distance.command.log
+
+    python3 - <<'PY' >> logs/snp_distance.command.log 2>&1
+import sys
+
+packages = ["numpy", "pandas", "matplotlib", "seaborn"]
+
+for pkg in packages:
+    try:
+        __import__(pkg)
+        print(f"OK: {pkg} imported successfully")
+    except Exception as e:
+        print(f"WARNING: {pkg} could not be imported: {e}")
+
+print("Python package check completed.")
+PY
 
     python3 - <<'PY' >> logs/snp_distance.command.log 2>&1
 import csv
@@ -2685,18 +3229,46 @@ EOF
 }
 task IQTREE2_PHYLOGENY {
   input {
-    String docker_image = "staphb/iqtree2:2.3.4"
+    String docker_image = "gmboowa/iqtree2-python:2.3.4"
     File alignment
     String model = "GTR+G"
     Int bootstrap_replicates = 1000
     Int cpu = 8
     Int memory_gb = 16
     Boolean midpoint_root_tree = true
+
+    # Samples with missing/gap/ambiguous content >= this threshold
+    # will be excluded from IQ-TREE phylogenetic inference only.
+    # They remain part of the wider workflow and can be reported downstream.
+    Float max_missing_fraction_for_tree = 0.50
+
+    # Minimum number of non-reference samples required to run IQ-TREE.
+    Int min_non_reference_samples_for_tree = 3
   }
 
   command <<<
     set -uo pipefail
     mkdir -p iqtree logs
+
+    ###########################################################################
+    # Guaranteed placeholder outputs
+    #
+    # Cromwell fails output collection if a declared File output does not exist.
+    # These placeholders are overwritten later when filtering and IQ-TREE run
+    # successfully, but they protect the task from missing-output failures if
+    # filtering exits early or IQ-TREE is skipped.
+    ###########################################################################
+
+    echo -e "sample\talignment_length\tacgt_count\tmissing_count\tmissing_fraction\tthreshold\treason\texclusion_note" > iqtree/excluded_from_iqtree.tsv
+    echo -e "sample\talignment_length\tacgt_count\tmissing_count\tmissing_fraction" > iqtree/included_in_iqtree.tsv
+    echo "Alignment filtering has not yet completed." > iqtree/alignment_filtering_summary.txt
+    echo "IQ-TREE log not available." > iqtree/iqtree.log
+    echo "IQ-TREE report not available." > iqtree/iqtree.report
+    echo "" > iqtree/support_labels.txt
+    echo "not_started" > iqtree/iqtree_status.txt
+    echo "(IQTREE_not_started:0.0);" > iqtree/final.treefile
+    echo "IQ-TREE was not executed or produced no run log." > logs/iqtree.run.log
+    echo "IQ-TREE command log initialized." > logs/iqtree.command.log
 
     if command -v iqtree2 >/dev/null 2>&1; then
       IQTREE_BIN="$(command -v iqtree2)"
@@ -2706,34 +3278,310 @@ task IQTREE2_PHYLOGENY {
       IQTREE_BIN="/usr/local/bin/iqtree2"
     else
       echo "ERROR: IQ-TREE executable not found." >&2
+      echo "iqtree_executable_not_found" > iqtree/iqtree_status.txt
       exit 127
     fi
 
+    cp "~{alignment}" iqtree/mtbc_core_snp_alignment.original.fasta
     cp "~{alignment}" iqtree/mtbc_core_snp_alignment.fasta
 
-    if [ ! -s iqtree/mtbc_core_snp_alignment.fasta ]; then
+    if [ ! -s iqtree/mtbc_core_snp_alignment.original.fasta ]; then
       echo "ERROR: alignment file is missing or empty." >&2
+      echo "alignment_missing_or_empty" > iqtree/iqtree_status.txt
+      echo "ERROR: alignment file is missing or empty." > iqtree/alignment_filtering_summary.txt
       exit 1
     fi
 
     echo "Using IQ-TREE: ${IQTREE_BIN}" > logs/iqtree.command.log
     echo "Model: ~{model}" >> logs/iqtree.command.log
+    echo "Bootstrap replicates: ~{bootstrap_replicates}" >> logs/iqtree.command.log
+    echo "CPU threads: ~{cpu}" >> logs/iqtree.command.log
+    echo "Maximum missing fraction allowed for tree: ~{max_missing_fraction_for_tree}" >> logs/iqtree.command.log
+    echo "Minimum non-reference samples required for tree: ~{min_non_reference_samples_for_tree}" >> logs/iqtree.command.log
+    echo "" >> logs/iqtree.command.log
 
-    if "$IQTREE_BIN" \
-      -s iqtree/mtbc_core_snp_alignment.fasta \
-      -m ~{model} \
-      -B ~{bootstrap_replicates} \
-      -alrt ~{bootstrap_replicates} \
-      -bnni \
-      -nt ~{cpu} \
-      -pre iqtree/MTBC_core_SNP_phylogeny \
-      >> logs/iqtree.run.log 2>&1; then
+    ###########################################################################
+    # Pre-IQ-TREE filtering
+    #
+    # This does NOT remove samples from the whole workflow.
+    # It only removes samples from IQ-TREE phylogenetic inference when their
+    # core-SNP alignment sequence is too poor for tree reconstruction.
+    #
+    # Outputs:
+    #   iqtree/mtbc_core_snp_alignment.original.fasta = original alignment
+    #   iqtree/mtbc_core_snp_alignment.fasta          = filtered alignment for IQ-TREE
+    #   iqtree/excluded_from_iqtree.tsv               = samples excluded from tree only
+    #   iqtree/included_in_iqtree.tsv                 = samples retained for tree
+    #   iqtree/alignment_filtering_summary.txt        = filtering summary
+    ###########################################################################
 
-      status="success"
+    python3 <<'PY'
+from collections import OrderedDict
+import sys
+
+input_fasta = "iqtree/mtbc_core_snp_alignment.original.fasta"
+clean_fasta = "iqtree/mtbc_core_snp_alignment.fasta"
+excluded_tsv = "iqtree/excluded_from_iqtree.tsv"
+included_tsv = "iqtree/included_in_iqtree.tsv"
+summary_txt = "iqtree/alignment_filtering_summary.txt"
+
+max_missing_fraction = float("~{max_missing_fraction_for_tree}")
+min_non_reference_samples = int("~{min_non_reference_samples_for_tree}")
+
+records = OrderedDict()
+current_name = None
+current_seq = []
+
+with open(input_fasta, "r", encoding="utf-8", errors="replace") as handle:
+    for line in handle:
+        line = line.rstrip("\n")
+        if not line:
+            continue
+
+        if line.startswith(">"):
+            if current_name is not None:
+                records[current_name] = "".join(current_seq)
+
+            current_name = line[1:].strip().split()[0]
+            current_seq = []
+        else:
+            current_seq.append(line.strip())
+
+if current_name is not None:
+    records[current_name] = "".join(current_seq)
+
+def write_empty_failure_outputs(message, exit_code):
+    with open(excluded_tsv, "w") as out:
+        out.write("sample\talignment_length\tacgt_count\tmissing_count\tmissing_fraction\tthreshold\treason\texclusion_note\n")
+
+    with open(included_tsv, "w") as out:
+        out.write("sample\talignment_length\tacgt_count\tmissing_count\tmissing_fraction\n")
+
+    with open(summary_txt, "w") as out:
+        out.write(message.rstrip() + "\n")
+
+    with open(clean_fasta, "w") as out:
+        out.write("")
+
+    sys.exit(exit_code)
+
+if not records:
+    write_empty_failure_outputs(
+        "ERROR: No FASTA records were found in the alignment.",
+        10
+    )
+
+lengths = {name: len(seq) for name, seq in records.items()}
+unique_lengths = sorted(set(lengths.values()))
+
+if len(unique_lengths) != 1:
+    with open(excluded_tsv, "w") as out:
+        out.write("sample\talignment_length\tacgt_count\tmissing_count\tmissing_fraction\tthreshold\treason\texclusion_note\n")
+
+    with open(included_tsv, "w") as out:
+        out.write("sample\talignment_length\tacgt_count\tmissing_count\tmissing_fraction\n")
+
+    with open(summary_txt, "w") as out:
+        out.write("ERROR: Alignment records do not all have the same length.\n")
+        out.write("sample\tsequence_length\n")
+        for name, length in lengths.items():
+            out.write(f"{name}\t{length}\n")
+
+    with open(clean_fasta, "w") as out:
+        out.write("")
+
+    sys.exit(11)
+
+alignment_length = unique_lengths[0]
+
+included = OrderedDict()
+excluded = []
+
+threshold_percent_text = f"{max_missing_fraction * 100:.0f}%"
+
+for name, seq in records.items():
+    seq_upper = seq.upper()
+
+    acgt_count = sum(1 for base in seq_upper if base in {"A", "C", "G", "T"})
+    missing_count = sum(1 for base in seq_upper if base not in {"A", "C", "G", "T"})
+    missing_fraction = missing_count / alignment_length if alignment_length > 0 else 1.0
+    missing_percent_text = f"{missing_fraction * 100:.2f}%"
+
+    reason = ""
+    exclusion_note = ""
+
+    if alignment_length == 0:
+        reason = "empty_sequence"
+        exclusion_note = (
+            f"{name} was excluded from IQ-TREE because its core-SNP alignment "
+            f"sequence was empty."
+        )
+
+    elif acgt_count == 0:
+        reason = "no_usable_acgt_bases"
+        exclusion_note = (
+            f"{name} was excluded from IQ-TREE because it had "
+            f"{missing_percent_text} missing/ambiguous/gap content in the "
+            f"core-SNP alignment and no usable ACGT bases."
+        )
+
+    elif missing_fraction >= max_missing_fraction:
+        reason = f"missing_fraction_ge_{max_missing_fraction}"
+        exclusion_note = (
+            f"{name} was excluded from IQ-TREE because "
+            f"{missing_percent_text} of its core-SNP alignment was "
+            f"missing/ambiguous/gap content, exceeding the maximum allowed "
+            f"threshold of {threshold_percent_text}."
+        )
+
+    if reason:
+        excluded.append({
+            "sample": name,
+            "alignment_length": alignment_length,
+            "acgt_count": acgt_count,
+            "missing_count": missing_count,
+            "missing_fraction": missing_fraction,
+            "threshold": max_missing_fraction,
+            "reason": reason,
+            "exclusion_note": exclusion_note
+        })
+    else:
+        included[name] = seq
+
+non_reference_included = [
+    name for name in included
+    if name.lower() not in {"reference", "ref", "h37rv", "h37rv_reference"}
+]
+
+with open(excluded_tsv, "w") as out:
+    out.write("sample\talignment_length\tacgt_count\tmissing_count\tmissing_fraction\tthreshold\treason\texclusion_note\n")
+    for row in excluded:
+        out.write(
+            f"{row['sample']}\t"
+            f"{row['alignment_length']}\t"
+            f"{row['acgt_count']}\t"
+            f"{row['missing_count']}\t"
+            f"{row['missing_fraction']:.6f}\t"
+            f"{row['threshold']:.6f}\t"
+            f"{row['reason']}\t"
+            f"{row['exclusion_note']}\n"
+        )
+
+with open(included_tsv, "w") as out:
+    out.write("sample\talignment_length\tacgt_count\tmissing_count\tmissing_fraction\n")
+    for name, seq in included.items():
+        seq_upper = seq.upper()
+        acgt_count = sum(1 for base in seq_upper if base in {"A", "C", "G", "T"})
+        missing_count = sum(1 for base in seq_upper if base not in {"A", "C", "G", "T"})
+        missing_fraction = missing_count / alignment_length if alignment_length > 0 else 1.0
+
+        out.write(
+            f"{name}\t"
+            f"{alignment_length}\t"
+            f"{acgt_count}\t"
+            f"{missing_count}\t"
+            f"{missing_fraction:.6f}\n"
+        )
+
+with open(clean_fasta, "w") as out:
+    for name, seq in included.items():
+        out.write(f">{name}\n")
+        for i in range(0, len(seq), 80):
+            out.write(seq[i:i+80] + "\n")
+
+with open(summary_txt, "w") as out:
+    out.write(f"Original sequences: {len(records)}\n")
+    out.write(f"Included sequences: {len(included)}\n")
+    out.write(f"Excluded sequences: {len(excluded)}\n")
+    out.write(f"Included non-reference samples: {len(non_reference_included)}\n")
+    out.write(f"Alignment length: {alignment_length}\n")
+    out.write(f"Maximum allowed missing fraction: {max_missing_fraction}\n")
+    out.write("\n")
+
+    if excluded:
+        out.write("Excluded samples from IQ-TREE only:\n")
+        for row in excluded:
+            out.write(
+                f"- {row['sample']}: "
+                f"{row['missing_fraction']:.2%} missing/ambiguous/gap content; "
+                f"{row['reason']}; "
+                f"{row['exclusion_note']}\n"
+            )
+    else:
+        out.write("Excluded samples from IQ-TREE only: none\n")
+
+    out.write("\n")
+    out.write(
+        "Note: Excluded samples are not removed from the wider workflow. "
+        "They are excluded only from IQ-TREE phylogenetic inference because "
+        "their core-SNP alignment sequence did not meet the minimum quality "
+        "requirements for tree reconstruction.\n"
+    )
+
+if len(non_reference_included) < min_non_reference_samples:
+    sys.exit(12)
+
+sys.exit(0)
+PY
+
+    filter_exit_code=$?
+
+    echo "Alignment filtering exit code: ${filter_exit_code}" >> logs/iqtree.command.log
+
+    if [ -s iqtree/alignment_filtering_summary.txt ]; then
+      cat iqtree/alignment_filtering_summary.txt >> logs/iqtree.command.log
+    else
+      echo "Alignment filtering summary was not generated." >> logs/iqtree.command.log
+      echo "Alignment filtering summary was not generated." > iqtree/alignment_filtering_summary.txt
+    fi
+
+    echo "" >> logs/iqtree.command.log
+
+    if [ ! -f iqtree/excluded_from_iqtree.tsv ]; then
+      echo -e "sample\talignment_length\tacgt_count\tmissing_count\tmissing_fraction\tthreshold\treason\texclusion_note" > iqtree/excluded_from_iqtree.tsv
+    fi
+
+    if [ ! -f iqtree/included_in_iqtree.tsv ]; then
+      echo -e "sample\talignment_length\tacgt_count\tmissing_count\tmissing_fraction" > iqtree/included_in_iqtree.tsv
+    fi
+
+    if [ ! -f iqtree/mtbc_core_snp_alignment.fasta ]; then
+      cp iqtree/mtbc_core_snp_alignment.original.fasta iqtree/mtbc_core_snp_alignment.fasta || true
+    fi
+
+    if [ "${filter_exit_code}" -eq 10 ] || [ "${filter_exit_code}" -eq 11 ]; then
+      status="alignment_filtering_failed"
+      echo "ERROR: Alignment filtering failed before IQ-TREE." >> logs/iqtree.command.log
+
+    elif [ "${filter_exit_code}" -eq 12 ]; then
+      status="too_few_samples_after_filtering"
+      echo "WARNING: Too few valid non-reference samples remained after filtering. Generating fallback tree." >> logs/iqtree.command.log
+
+    elif [ "${filter_exit_code}" -eq 0 ]; then
+      echo "Proceeding with filtered alignment:" >> logs/iqtree.command.log
+      echo "  iqtree/mtbc_core_snp_alignment.fasta" >> logs/iqtree.command.log
+      echo "" >> logs/iqtree.command.log
+
+      if "$IQTREE_BIN" \
+        -s iqtree/mtbc_core_snp_alignment.fasta \
+        -m ~{model} \
+        -B ~{bootstrap_replicates} \
+        -alrt ~{bootstrap_replicates} \
+        -bnni \
+        -nt ~{cpu} \
+        -pre iqtree/MTBC_core_SNP_phylogeny \
+        >> logs/iqtree.run.log 2>&1; then
+
+        status="success"
+
+      else
+        status="iqtree_failed_after_filtering"
+        echo "WARNING: IQ-TREE failed even after problematic-sample filtering. Generating fallback tree." >> logs/iqtree.command.log
+      fi
 
     else
-      status="iqtree_failed"
-      echo "WARNING: IQ-TREE failed. Generating fallback tree." >> logs/iqtree.command.log
+      status="unknown_filtering_error"
+      echo "ERROR: Unknown filtering error before IQ-TREE. Generating fallback tree." >> logs/iqtree.command.log
     fi
 
     if [ "$status" = "success" ] && [ -s iqtree/MTBC_core_SNP_phylogeny.treefile ]; then
@@ -2754,9 +3602,61 @@ task IQTREE2_PHYLOGENY {
       echo "IQ-TREE report not available." > iqtree/iqtree.report
     fi
 
+    if [ ! -s logs/iqtree.run.log ]; then
+      echo "IQ-TREE was not executed or produced no run log." > logs/iqtree.run.log
+    fi
+
     grep -oE '\)[0-9]+(\.[0-9]+)?(/[0-9]+(\.[0-9]+)?)?:' iqtree/final.treefile > iqtree/support_labels.txt || true
 
+    if [ ! -f iqtree/support_labels.txt ]; then
+      echo "" > iqtree/support_labels.txt
+    fi
+
     echo "$status" > iqtree/iqtree_status.txt
+
+    if [ ! -f iqtree/excluded_from_iqtree.tsv ]; then
+      echo -e "sample\talignment_length\tacgt_count\tmissing_count\tmissing_fraction\tthreshold\treason\texclusion_note" > iqtree/excluded_from_iqtree.tsv
+    fi
+
+    if [ ! -f iqtree/included_in_iqtree.tsv ]; then
+      echo -e "sample\talignment_length\tacgt_count\tmissing_count\tmissing_fraction" > iqtree/included_in_iqtree.tsv
+    fi
+
+    if [ ! -f iqtree/alignment_filtering_summary.txt ]; then
+      echo "Alignment filtering summary not available." > iqtree/alignment_filtering_summary.txt
+    fi
+
+    if [ ! -f iqtree/mtbc_core_snp_alignment.original.fasta ]; then
+      echo "" > iqtree/mtbc_core_snp_alignment.original.fasta
+    fi
+
+    if [ ! -f iqtree/mtbc_core_snp_alignment.fasta ]; then
+      echo "" > iqtree/mtbc_core_snp_alignment.fasta
+    fi
+
+    if [ ! -f iqtree/final.treefile ]; then
+      echo "(IQTREE_failed:0.0);" > iqtree/final.treefile
+    fi
+
+    if [ ! -f iqtree/iqtree.log ]; then
+      echo "IQ-TREE log not available." > iqtree/iqtree.log
+    fi
+
+    if [ ! -f iqtree/iqtree.report ]; then
+      echo "IQ-TREE report not available." > iqtree/iqtree.report
+    fi
+
+    if [ ! -f iqtree/iqtree_status.txt ]; then
+      echo "unknown_status" > iqtree/iqtree_status.txt
+    fi
+
+    if [ ! -f logs/iqtree.command.log ]; then
+      echo "IQ-TREE command log not available." > logs/iqtree.command.log
+    fi
+
+    if [ ! -f logs/iqtree.run.log ]; then
+      echo "IQ-TREE run log not available." > logs/iqtree.run.log
+    fi
   >>>
 
   runtime {
@@ -2775,13 +3675,20 @@ task IQTREE2_PHYLOGENY {
     File iqtree_status = "iqtree/iqtree_status.txt"
     File iqtree_command_log = "logs/iqtree.command.log"
     File iqtree_run_log = "logs/iqtree.run.log"
+
+    File original_alignment = "iqtree/mtbc_core_snp_alignment.original.fasta"
+    File filtered_alignment = "iqtree/mtbc_core_snp_alignment.fasta"
+    File excluded_from_iqtree = "iqtree/excluded_from_iqtree.tsv"
+    File included_in_iqtree = "iqtree/included_in_iqtree.tsv"
+    File alignment_filtering_summary = "iqtree/alignment_filtering_summary.txt"
   }
 }
-
 task TREE_VISUALIZATION {
   input {
     File input_tree
     File? tbprofiler_summary_tsv
+    File? resistance_profile_summary_tsv
+    File? iqtree_excluded_samples_tsv
     String docker_image = "gmboowa/ete3-render:1.18"
     Int width = 2400
     Int height = 1600
@@ -2813,26 +3720,60 @@ if image_format not in {"png", "svg", "pdf"}:
 out_img = outdir / f"phylogenetic_tree.{image_format}"
 cleaned_tree = outdir / "phylogenetic_tree.cleaned.nwk"
 log = outdir / "render.log"
+excluded_copy = outdir / "excluded_from_iqtree.tsv"
 
-tree_input = "~{if defined(input_tree) then input_tree else ""}"
+tree_input = "~{input_tree}"
 tbprofiler_summary_path = "~{if defined(tbprofiler_summary_tsv) then tbprofiler_summary_tsv else ""}"
+resistance_profile_summary_path = "~{if defined(resistance_profile_summary_tsv) then resistance_profile_summary_tsv else ""}"
+iqtree_excluded_samples_path = "~{if defined(iqtree_excluded_samples_tsv) then iqtree_excluded_samples_tsv else ""}"
 requested_width = int("~{width}")
 requested_height = int("~{height}")
 title = "~{title}"
 
 log.write_text("TREE_VISUALIZATION started\n")
 
+if iqtree_excluded_samples_path and Path(iqtree_excluded_samples_path).exists():
+    try:
+        excluded_copy.write_text(
+            Path(iqtree_excluded_samples_path).read_text(encoding="utf-8", errors="replace"),
+            encoding="utf-8"
+        )
+        with open(log, "a") as fh:
+            fh.write(f"Copied IQ-TREE exclusion file: {iqtree_excluded_samples_path}\n")
+    except Exception as exc:
+        with open(log, "a") as fh:
+            fh.write(f"WARNING: Could not copy IQ-TREE exclusion file: {repr(exc)}\n")
+else:
+    excluded_copy.write_text(
+        "sample\talignment_length\tacgt_count\tmissing_count\tmissing_fraction\treason\n",
+        encoding="utf-8"
+    )
+
 RESISTANCE_COLORS = {
-    "Unknown": "#999999",
     "Sensitive": "#2a9d8f",
+    "Hr-TB": "#2292dc",
+    "MDR/RR-TB": "#ed641e",
+    "Pre-XDR-TB": "#ed2828",
+    "XDR-TB": "#5a189a",
     "Monoresistance": "#fcd33d",
-    "HR-TB": "#2292dc",
-    "RR-TB": "#3b82f6",
-    "MDR": "#ed641e",
-    "Pre-XDR": "#ed2828",
-    "XDR": "#5a189a",
-    "Other drug resistance": "#2292dc"
+    "Polyresistance": "#2292dc",
+    "Other drug resistance": "#2292dc",
+    "Resistance not determined by TB-Profiler": "#999999",
+    "Unknown": "#999999"
 }
+
+CANONICAL_RESISTANCE_ORDER = [
+    "Sensitive",
+    "Hr-TB",
+    "MDR/RR-TB",
+    "Pre-XDR-TB",
+    "XDR-TB",
+    "Monoresistance",
+    "Polyresistance",
+    "Other drug resistance",
+    "Resistance not determined by TB-Profiler",
+    "Unknown"
+]
 
 def write_placeholder_image(message):
     msg = str(message).replace("<", "&lt;").replace(">", "&gt;")
@@ -2840,7 +3781,7 @@ def write_placeholder_image(message):
 <rect width="100%" height="100%" fill="#ffffff"/>
 <rect x="40" y="40" width="1120" height="420" rx="24" fill="#f8fafc" stroke="#cbd5e1" stroke-width="3"/>
 <text x="600" y="170" text-anchor="middle" font-family="Arial" font-size="34" font-weight="700" fill="#0f172a">Tree visualization was not rendered</text>
-<text x="600" y="225" text-anchor="middle" font-family="Arial" font-size="22" fill="#475569">The Newick tree was preserved for downstream visualization.</text>
+<text x="600" y="225" text-anchor="middle" font-family="Arial" font-size="22" fill="#475569">The Newick tree was preserved for downstream reporting.</text>
 <text x="600" y="285" text-anchor="middle" font-family="Arial" font-size="18" fill="#b91c1c">{msg[:180]}</text>
 </svg>'''
 
@@ -2849,99 +3790,239 @@ def write_placeholder_image(message):
     elif image_format == "pdf":
         out_img.write_text("Tree visualization was not rendered. Newick tree preserved.\n" + str(message) + "\n", encoding="utf-8")
     else:
-        # Valid 1x1 transparent PNG placeholder. Kept minimal to avoid adding non-standard dependencies.
         png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
         out_img.write_bytes(base64.b64decode(png_b64))
+
+def normalize_tree_leaf_name(name):
+    s = str(name or "").strip().strip("'").strip('"')
+    s = s.split("/")[-1]
+    s = s.split("\\")[-1]
+
+    suffixes = [
+        ".consensus.subs",
+        ".consensus",
+        ".aligned",
+        ".snps",
+        ".subs",
+        ".tree",
+        ".nwk",
+        ".newick",
+        ".fa",
+        ".fasta",
+        ".fna",
+        ".bam",
+        ".sam",
+        ".vcf",
+        ".gz"
+    ]
+
+    changed = True
+    while changed:
+        changed = False
+        for suffix in suffixes:
+            if s.lower().endswith(suffix.lower()):
+                s = s[:-len(suffix)]
+                changed = True
+
+    s = re.sub(r"_R[12](_001)?$", "", s)
+    s = re.sub(r"_[12]$", "", s)
+    s = re.sub(r"\.R[12](_001)?$", "", s)
+    s = re.sub(r"\.[12]$", "", s)
+    s = re.sub(r"\s+", "_", s)
+    return s.strip()
+
+def normalize_metadata_sample_id(name):
+    return normalize_tree_leaf_name(name)
+
+def is_reference_tip(name):
+    normalized = normalize_tree_leaf_name(name).lower()
+    reference_names = {
+        "reference",
+        "ref",
+        "h37rv",
+        "h37rv_siena",
+        "h37rvsiena",
+        "nc_000962",
+        "nc_000962.3",
+        "mycobacterium_tuberculosis_h37rv",
+        "mycobacterium_tuberculosis_h37rv_siena"
+    }
+    return normalized in reference_names
+
+def normalize_profile_label(value):
+    raw = str(value or "").strip()
+    low = raw.lower().replace("_", "-")
+
+    if low in {"", "unknown", "not reported", "na", "n/a", "none"}:
+        return "Unknown"
+
+    if low in {"sensitive", "susceptible", "no resistance detected by tb-profiler", "no resistance detected"}:
+        return "Sensitive"
+
+    if "resistance not determined" in low:
+        return "Resistance not determined by TB-Profiler"
+
+    if "xdr" in low and "pre" not in low:
+        return "XDR-TB"
+
+    if "pre-xdr" in low or "pre xdr" in low or "prexdr" in low:
+        return "Pre-XDR-TB"
+
+    if "mdr" in low or re.search(r"\brr[- ]?tb\b", low):
+        return "MDR/RR-TB"
+
+    if re.search(r"\bhr[- ]?tb\b", low) or "isoniazid-resistant" in low:
+        return "Hr-TB"
+
+    if "mono" in low:
+        return "Monoresistance"
+
+    if "poly" in low:
+        return "Polyresistance"
+
+    if "other drug resistance" in low:
+        return "Other drug resistance"
+
+    return "Unknown"
+
+def profile_color(profile):
+    return RESISTANCE_COLORS.get(profile, RESISTANCE_COLORS["Unknown"])
 
 def normalize_drug_name(x):
     s = str(x or "").strip().lower()
     s = re.sub(r"[_\-]+", " ", s)
     s = re.sub(r"\s+", " ", s)
+
     aliases = {
-        "inh": "isoniazid", "isoniazid": "isoniazid", "h": "isoniazid",
-        "rif": "rifampicin", "rmp": "rifampicin", "rifampin": "rifampicin", "rifampicin": "rifampicin", "r": "rifampicin",
-        "pza": "pyrazinamide", "pyrazinamide": "pyrazinamide", "z": "pyrazinamide",
-        "emb": "ethambutol", "ethambutol": "ethambutol", "e": "ethambutol",
-        "sm": "streptomycin", "str": "streptomycin", "streptomycin": "streptomycin", "s": "streptomycin",
-        "levo": "levofloxacin", "levofloxacin": "levofloxacin", "lfx": "levofloxacin",
-        "moxi": "moxifloxacin", "moxifloxacin": "moxifloxacin", "mfx": "moxifloxacin",
-        "ofx": "ofloxacin", "ofloxacin": "ofloxacin",
-        "amikacin": "amikacin", "amk": "amikacin",
-        "kanamycin": "kanamycin", "kan": "kanamycin",
-        "capreomycin": "capreomycin", "cap": "capreomycin",
-        "bedaquiline": "bedaquiline", "bdq": "bedaquiline",
-        "linezolid": "linezolid", "lzd": "linezolid",
-        "clofazimine": "clofazimine", "cfz": "clofazimine",
-        "ethionamide": "ethionamide", "eto": "ethionamide",
-        "prothionamide": "prothionamide", "pto": "prothionamide",
-        "cycloserine": "cycloserine", "cs": "cycloserine",
-        "para aminosalicylic acid": "para-aminosalicylic acid", "pas": "para-aminosalicylic acid",
-        "delamanid": "delamanid", "dlm": "delamanid",
-        "pretomanid": "pretomanid", "pa": "pretomanid"
+        "inh": "isoniazid",
+        "isoniazid": "isoniazid",
+        "h": "isoniazid",
+        "rif": "rifampicin",
+        "rmp": "rifampicin",
+        "rifampin": "rifampicin",
+        "rifampicin": "rifampicin",
+        "r": "rifampicin",
+        "pza": "pyrazinamide",
+        "pyrazinamide": "pyrazinamide",
+        "z": "pyrazinamide",
+        "emb": "ethambutol",
+        "ethambutol": "ethambutol",
+        "e": "ethambutol",
+        "sm": "streptomycin",
+        "str": "streptomycin",
+        "streptomycin": "streptomycin",
+        "s": "streptomycin",
+        "levo": "levofloxacin",
+        "levofloxacin": "levofloxacin",
+        "lfx": "levofloxacin",
+        "moxi": "moxifloxacin",
+        "moxifloxacin": "moxifloxacin",
+        "mfx": "moxifloxacin",
+        "ofx": "ofloxacin",
+        "ofloxacin": "ofloxacin",
+        "amikacin": "amikacin",
+        "amk": "amikacin",
+        "kanamycin": "kanamycin",
+        "kan": "kanamycin",
+        "capreomycin": "capreomycin",
+        "cap": "capreomycin",
+        "bedaquiline": "bedaquiline",
+        "bdq": "bedaquiline",
+        "linezolid": "linezolid",
+        "lzd": "linezolid",
+        "clofazimine": "clofazimine",
+        "cfz": "clofazimine",
+        "ethionamide": "ethionamide",
+        "eto": "ethionamide",
+        "prothionamide": "prothionamide",
+        "pto": "prothionamide",
+        "cycloserine": "cycloserine",
+        "cs": "cycloserine",
+        "para aminosalicylic acid": "para-aminosalicylic acid",
+        "pas": "para-aminosalicylic acid",
+        "delamanid": "delamanid",
+        "dlm": "delamanid",
+        "pretomanid": "pretomanid",
+        "pa": "pretomanid"
     }
+
     return aliases.get(s, s)
 
 def split_drug_tokens(value):
     if not value:
         return []
+
     txt = str(value or "")
     txt = txt.replace(";", ",").replace("|", ",").replace("/", ",")
     txt = re.sub(r"\band\b", ",", txt, flags=re.IGNORECASE)
+
     out = []
+
     for part in txt.split(","):
         p = normalize_drug_name(part)
         if p and p not in {"none", "none reported", "not reported", "susceptible", "sensitive", "unknown", "na", "n/a"}:
             out.append(p)
+
     return out
 
-def classify_resistance(dr_type, resistant_drugs):
-    profile_raw = (dr_type or "").strip()
-    profile = profile_raw.lower().replace("_", "-")
+def classify_resistance_from_drugs(dr_type, resistant_drugs):
+    profile = normalize_profile_label(dr_type)
+
+    if profile != "Unknown":
+        return profile, profile_color(profile)
+
     drugs = set(split_drug_tokens(resistant_drugs))
-    if not drugs and profile in {"", "not reported", "unknown", "na", "n/a", "none", "susceptible", "sensitive"}:
+
+    if not drugs:
         return "Sensitive", RESISTANCE_COLORS["Sensitive"]
-    if "xdr" in profile and "pre" not in profile:
-        return "XDR", RESISTANCE_COLORS["XDR"]
-    if "pre-xdr" in profile or "pre xdr" in profile or "prexdr" in profile:
-        return "Pre-XDR", RESISTANCE_COLORS["Pre-XDR"]
-    if "mdr" in profile:
-        return "MDR", RESISTANCE_COLORS["MDR"]
-    if re.search(r"\bhr[- ]?tb\b", profile):
-        return "HR-TB", RESISTANCE_COLORS["HR-TB"]
-    if re.search(r"\brr[- ]?tb\b", profile):
-        return "RR-TB", RESISTANCE_COLORS["RR-TB"]
+
     isoniazid = "isoniazid" in drugs
     rifampicin = "rifampicin" in drugs
-    fluoroquinolones = {"levofloxacin", "moxifloxacin", "ofloxacin", "gatifloxacin", "ciprofloxacin"}
-    group_a_additional = {"bedaquiline", "linezolid"}
+
+    fluoroquinolones = {
+        "levofloxacin",
+        "moxifloxacin",
+        "ofloxacin",
+        "gatifloxacin",
+        "ciprofloxacin"
+    }
+
+    group_a_additional = {
+        "bedaquiline",
+        "linezolid"
+    }
+
     has_fq = bool(drugs.intersection(fluoroquinolones))
     has_group_a_additional = bool(drugs.intersection(group_a_additional))
-    if isoniazid and rifampicin and has_fq and has_group_a_additional:
-        return "XDR", RESISTANCE_COLORS["XDR"]
-    if isoniazid and rifampicin and has_fq:
-        return "Pre-XDR", RESISTANCE_COLORS["Pre-XDR"]
-    if isoniazid and rifampicin:
-        return "MDR", RESISTANCE_COLORS["MDR"]
-    if rifampicin and not isoniazid:
-        return "RR-TB", RESISTANCE_COLORS["RR-TB"]
+
+    if rifampicin and has_fq and has_group_a_additional:
+        return "XDR-TB", RESISTANCE_COLORS["XDR-TB"]
+
+    if rifampicin and has_fq:
+        return "Pre-XDR-TB", RESISTANCE_COLORS["Pre-XDR-TB"]
+
+    if rifampicin:
+        return "MDR/RR-TB", RESISTANCE_COLORS["MDR/RR-TB"]
+
     if isoniazid and not rifampicin:
-        return "HR-TB", RESISTANCE_COLORS["HR-TB"]
+        return "Hr-TB", RESISTANCE_COLORS["Hr-TB"]
+
     if len(drugs) == 1:
         return "Monoresistance", RESISTANCE_COLORS["Monoresistance"]
-    if len(drugs) > 1:
-        return "Other drug resistance", RESISTANCE_COLORS["Other drug resistance"]
-    if profile_raw and profile not in {"not reported", "unknown", "na", "n/a", "none"}:
-        return profile_raw, RESISTANCE_COLORS["Other drug resistance"]
-    return "Unknown", RESISTANCE_COLORS["Unknown"]
+
+    return "Polyresistance", RESISTANCE_COLORS["Polyresistance"]
 
 def clean_single_bootstrap_value(raw_value):
     raw = str(raw_value or "").strip().strip("'\"")
     if not raw:
         return ""
+
     numeric_tokens = re.findall(r"\d+(?:\.\d+)?", raw)
     if not numeric_tokens:
         return ""
+
     support_value = numeric_tokens[-1] if len(numeric_tokens) >= 2 else numeric_tokens[0]
+
     if support_value.isdigit():
         if support_value == "100100":
             support_value = "100"
@@ -2949,13 +4030,18 @@ def clean_single_bootstrap_value(raw_value):
             support_value = "100"
         elif len(support_value) == 4:
             support_value = support_value[2:]
+
     try:
         value = float(support_value)
+
         if 0 < value <= 1:
             value *= 100
+
         if value <= 0 or value > 100:
             return ""
+
         return str(int(round(value)))
+
     except Exception:
         return ""
 
@@ -2964,65 +4050,206 @@ try:
         raise ValueError("input_tree not provided")
 
     tree_path = Path(tree_input)
+
     if not tree_path.exists() or tree_path.stat().st_size == 0:
         raise FileNotFoundError(f"Tree missing or empty: {tree_path}")
 
     raw_newick = tree_path.read_text(errors="replace").strip()
+
     if not raw_newick:
         raise ValueError("Tree file is empty")
+
     cleaned_tree.write_text(raw_newick + ("\n" if not raw_newick.endswith("\n") else ""), encoding="utf-8")
 
+    if "IQTREE_failed" in raw_newick or "alignment_filtering_failed" in raw_newick or raw_newick.strip() in {"();", "(IQTREE_failed:0.0);"}:
+        raise ValueError("IQ-TREE did not produce a valid phylogenetic tree. A fallback Newick tree was detected.")
+
     metadata = {}
+    resistance_profile_map = {}
+    resistance_profile_source = "none"
+
+    if resistance_profile_summary_path and Path(resistance_profile_summary_path).exists():
+        with open(resistance_profile_summary_path, newline="") as fh:
+            reader = csv.DictReader(fh, delimiter="\t")
+
+            for r in reader:
+                sample_raw = (
+                    r.get("sample_id") or
+                    r.get("sample") or
+                    r.get("Sample ID") or
+                    ""
+                ).strip()
+
+                if not sample_raw:
+                    continue
+
+                sample = normalize_metadata_sample_id(sample_raw)
+
+                if not sample:
+                    continue
+
+                profile_raw = (
+                    r.get("resistance_profile") or
+                    r.get("dr_type") or
+                    r.get("Resistance profile") or
+                    ""
+                )
+
+                resistant_drugs = (
+                    r.get("resistant_drugs") or
+                    r.get("Predicted resistant drugs") or
+                    r.get("drug_resistance") or
+                    ""
+                )
+
+                category, color = classify_resistance_from_drugs(profile_raw, resistant_drugs)
+
+                resistance_profile_map[sample] = {
+                    "category": category,
+                    "color": color,
+                    "resistant_drugs": resistant_drugs
+                }
+
+        resistance_profile_source = "resistance_profile_summary_tsv"
+
     if tbprofiler_summary_path and Path(tbprofiler_summary_path).exists():
         with open(tbprofiler_summary_path, newline="") as fh:
             reader = csv.DictReader(fh, delimiter="\t")
+
             for r in reader:
-                sample = (r.get("sample") or "").strip()
+                sample_raw = (r.get("sample") or r.get("sample_id") or "").strip()
+
+                if not sample_raw:
+                    continue
+
+                sample = normalize_metadata_sample_id(sample_raw)
+
                 if not sample:
                     continue
+
                 main_lineage = (r.get("main_lineage") or "").strip()
                 sub_lineage = (r.get("sub_lineage") or "").strip()
+
                 lineage = sub_lineage or main_lineage
+
                 if lineage.lower() in {"not reported", "none", "na", "n/a", "unknown"}:
                     lineage = main_lineage
-                category, color = classify_resistance(r.get("dr_type"), r.get("resistant_drugs"))
-                metadata[sample] = {"lineage": lineage, "category": category, "color": color}
+
+                if sample in resistance_profile_map:
+                    category = resistance_profile_map[sample]["category"]
+                    color = resistance_profile_map[sample]["color"]
+                else:
+                    category, color = classify_resistance_from_drugs(r.get("dr_type"), r.get("resistant_drugs"))
+
+                metadata[sample] = {
+                    "lineage": lineage,
+                    "category": category,
+                    "color": color
+                }
+
+    for sample, profile_info in resistance_profile_map.items():
+        if sample not in metadata:
+            metadata[sample] = {
+                "lineage": "Lineage NA",
+                "category": profile_info["category"],
+                "color": profile_info["color"]
+            }
 
     from ete3 import Tree, TreeStyle, TextFace, NodeStyle
 
     t = Tree(str(tree_path), format=1)
 
-    reference_names = {"reference", "ref", "h37rv", "nc_000962", "nc_000962.3"}
+    original_to_normalized_leaf_names = {}
     removed_refs = []
+
     for leaf in list(t.get_leaves()):
-        if leaf.name.strip().lower() in reference_names:
-            removed_refs.append(leaf.name)
+        original_name = str(leaf.name or "").strip()
+        normalized_name = normalize_tree_leaf_name(original_name)
+        original_to_normalized_leaf_names[original_name] = normalized_name
+
+        if is_reference_tip(original_name):
+            removed_refs.append(original_name)
             leaf.detach()
+            continue
+
+        if normalized_name:
+            leaf.name = normalized_name
 
     if len(t.get_leaves()) < 2:
-        raise ValueError("Tree has fewer than two non-reference tips after filtering.")
+        raise ValueError("Tree has fewer than two non-reference tips after normalizing labels and removing only the true reference tip.")
 
     try:
         midpoint = t.get_midpoint_outgroup()
+
         if midpoint:
             t.set_outgroup(midpoint)
+
     except Exception as e:
         with open(log, "a") as fh:
             fh.write(f"WARNING: midpoint rooting failed: {repr(e)}\n")
 
     n_leaves = len(t.get_leaves())
+
     if n_leaves <= 5:
-        auto_width = max(requested_width, 3800); label_font = 14; lineage_font = 11; resistance_font = 11; bootstrap_font = 10; tip_node_size = 8; branch_width = 2; branch_vertical_margin = 18; margin_right = 1500
+        auto_width = max(requested_width, 3800)
+        label_font = 14
+        lineage_font = 11
+        resistance_font = 11
+        bootstrap_font = 10
+        tip_node_size = 8
+        branch_width = 2
+        branch_vertical_margin = 18
+        margin_right = 1500
     elif n_leaves <= 10:
-        auto_width = max(requested_width, 4200); label_font = 13; lineage_font = 10; resistance_font = 10; bootstrap_font = 9; tip_node_size = 7; branch_width = 2; branch_vertical_margin = 14; margin_right = 1600
+        auto_width = max(requested_width, 4200)
+        label_font = 13
+        lineage_font = 10
+        resistance_font = 10
+        bootstrap_font = 9
+        tip_node_size = 7
+        branch_width = 2
+        branch_vertical_margin = 14
+        margin_right = 1600
     elif n_leaves <= 25:
-        auto_width = max(requested_width, 5000); label_font = 11; lineage_font = 9; resistance_font = 9; bootstrap_font = 8; tip_node_size = 6; branch_width = 2; branch_vertical_margin = 8; margin_right = 1700
+        auto_width = max(requested_width, 5000)
+        label_font = 11
+        lineage_font = 9
+        resistance_font = 9
+        bootstrap_font = 8
+        tip_node_size = 6
+        branch_width = 2
+        branch_vertical_margin = 8
+        margin_right = 1700
     elif n_leaves <= 50:
-        auto_width = max(requested_width, 5600); label_font = 9; lineage_font = 8; resistance_font = 8; bootstrap_font = 7; tip_node_size = 5; branch_width = 1; branch_vertical_margin = 5; margin_right = 1800
+        auto_width = max(requested_width, 5600)
+        label_font = 9
+        lineage_font = 8
+        resistance_font = 8
+        bootstrap_font = 7
+        tip_node_size = 5
+        branch_width = 1
+        branch_vertical_margin = 5
+        margin_right = 1800
     elif n_leaves <= 100:
-        auto_width = max(requested_width, 6400); label_font = 8; lineage_font = 7; resistance_font = 7; bootstrap_font = 6; tip_node_size = 4; branch_width = 1; branch_vertical_margin = 3; margin_right = 1900
+        auto_width = max(requested_width, 6400)
+        label_font = 8
+        lineage_font = 7
+        resistance_font = 7
+        bootstrap_font = 6
+        tip_node_size = 4
+        branch_width = 1
+        branch_vertical_margin = 3
+        margin_right = 1900
     else:
-        auto_width = max(requested_width, 7200); label_font = 7; lineage_font = 6; resistance_font = 6; bootstrap_font = 5; tip_node_size = 3; branch_width = 1; branch_vertical_margin = 2; margin_right = 2000
+        auto_width = max(requested_width, 7200)
+        label_font = 7
+        lineage_font = 6
+        resistance_font = 6
+        bootstrap_font = 5
+        tip_node_size = 3
+        branch_width = 1
+        branch_vertical_margin = 2
+        margin_right = 2000
 
     for node in t.traverse():
         ns = NodeStyle()
@@ -3034,19 +4261,33 @@ try:
         if not node.is_leaf():
             raw_name = str(getattr(node, "name", "") or "").strip()
             clean_support = clean_single_bootstrap_value(raw_name)
+
             if not clean_support:
                 raw_support = str(getattr(node, "support", "") or "").strip()
                 clean_support = clean_single_bootstrap_value(raw_support)
+
             node.name = ""
+
             if clean_support:
                 node.add_face(TextFace(clean_support, fsize=bootstrap_font, fgcolor="#b91c1c"), column=0, position="branch-top")
 
+    metadata_matched = 0
+    metadata_missing = []
+
     for leaf in t.get_leaves():
-        sample = leaf.name
+        sample = normalize_tree_leaf_name(leaf.name)
         meta = metadata.get(sample, {})
+
+        if meta:
+            metadata_matched += 1
+        else:
+            metadata_missing.append(sample)
+
         lineage = meta.get("lineage", "") or "Lineage NA"
         category = meta.get("category", "Unknown")
-        color = meta.get("color", RESISTANCE_COLORS["Unknown"])
+        category = normalize_profile_label(category)
+        color = meta.get("color", profile_color(category))
+
         leaf.name = ""
         leaf.add_face(TextFace(sample, fsize=label_font, fgcolor="#111827"), column=0, position="branch-right")
         leaf.add_face(TextFace(f"  {lineage}", fsize=lineage_font, fgcolor="#2563eb"), column=1, position="branch-right")
@@ -3073,6 +4314,27 @@ try:
         fh.write(f"Output image: {out_img}\n")
         fh.write(f"Leaves rendered: {n_leaves}\n")
         fh.write(f"Removed reference tips: {', '.join(removed_refs) if removed_refs else 'none'}\n")
+        fh.write(f"Resistance profile source: {resistance_profile_source}\n")
+        fh.write(f"Canonical resistance profiles loaded: {len(resistance_profile_map)}\n")
+        fh.write(f"Metadata rows loaded after normalization: {len(metadata)}\n")
+        fh.write(f"Tree leaves matched to metadata after normalization: {metadata_matched}\n")
+
+        if excluded_copy.exists():
+            excluded_rows = 0
+            try:
+                with open(excluded_copy, newline="", encoding="utf-8", errors="replace") as excluded_handle:
+                    excluded_reader = csv.DictReader(excluded_handle, delimiter="\t")
+                    for excluded_row in excluded_reader:
+                        if excluded_row.get("sample", "").strip():
+                            excluded_rows += 1
+                fh.write(f"IQ-TREE-excluded samples available for reporting: {excluded_rows}\n")
+            except Exception as exc:
+                fh.write(f"WARNING: Could not summarize IQ-TREE exclusion file: {repr(exc)}\n")
+
+        if metadata_missing:
+            fh.write("WARNING: Tree leaves without matching metadata after normalization: " + ", ".join(metadata_missing[:100]) + "\n")
+        else:
+            fh.write("All rendered tree leaves matched metadata after normalization.\n")
 
 except Exception as e:
     with open(log, "a") as fh:
@@ -3102,9 +4364,9 @@ PY
     File tree_image = "tree_visualization/phylogenetic_tree.~{image_format}"
     File cleaned_tree = "tree_visualization/phylogenetic_tree.cleaned.nwk"
     File render_log = "tree_visualization/render.log"
+    File excluded_from_iqtree = "tree_visualization/excluded_from_iqtree.tsv"
   }
 }
-
 task TB_SURVEILLANCE_SUMMARY_VISUALS {
   input {
     String docker_image = "python:3.11-slim"
@@ -3177,6 +4439,18 @@ def normalize_missing(x, replacement="Not reported"):
     if v.lower() in ["", "none", "none reported", "not reported", "unknown", "na", "n/a"]:
         return replacement
     return v
+
+def normalize_sample_id(name):
+    s = str(name or "").strip()
+    s = s.split("/")[-1]
+    s = s.split("\\")[-1]
+    s = re.sub(r"(\.fastq\.gz|\.fq\.gz|\.fastq|\.fq|\.gz)$", "", s, flags=re.IGNORECASE)
+    s = re.sub(
+        r"(_R?1_paired|_R?2_paired|_R?1|_R?2|_1_paired|_2_paired|_1|_2|\.R?1|\.R?2|\.1|\.2)$",
+        "",
+        s
+    )
+    return s.strip()
 
 def extract_mtbc_percent(evidence):
     text = str(evidence or "")
@@ -3308,36 +4582,57 @@ def resistance_detected(profile, drugs):
 
     return "YES"
 
-def split_integrated_mtbc_status(status_text):
-    text = clean_text(status_text)
+def infer_kraken_mtbc_support(row):
+    value = (
+        row.get("MTBC_Supported")
+        or row.get("mtbc_supported")
+        or row.get("MTBC supported")
+        or ""
+    )
 
-    mtbc_status = "MTBC status not determined"
-    support_source = "Not reported"
-    lineage_status = "Not reported"
+    value_upper = str(value or "").strip().upper()
 
-    low = text.lower()
+    if value_upper in {"YES", "Y", "TRUE", "1"}:
+        return "YES"
 
-    if "mycobacterium tuberculosis complex" in low or "mtbc" in low:
-        mtbc_status = "MTBC supported"
+    if value_upper in {"NO", "N", "FALSE", "0"}:
+        return "NO"
 
-    if "kraken2/bracken" in low:
-        support_source = "Kraken2/Bracken"
-    elif "tb-profiler" in low:
-        support_source = "TB-Profiler"
+    species = (
+        row.get("Species_Identified")
+        or row.get("Species identified")
+        or row.get("species")
+        or row.get("Species")
+        or ""
+    )
 
-    if "lineage not resolved" in low or "not resolved" in low:
-        lineage_status = "Not resolved by TB-Profiler"
-    elif "lineage" in low:
-        lineage_status = "Resolved or inferred by TB-Profiler"
+    evidence = row.get("Evidence") or row.get("evidence") or ""
 
-    return mtbc_status, support_source, lineage_status
+    text = " ".join([species, evidence]).lower()
+
+    if any(t in text for t in [
+        "mycobacterium tuberculosis",
+        "m. tuberculosis",
+        "mycobacterium tuberculosis complex",
+        "mtbc",
+        "tuberculosis complex"
+    ]):
+        return "YES"
+
+    return "NO"
+
+def split_integrated_mtbc_status_from_kraken(mtbc_supported):
+    if str(mtbc_supported or "").strip().upper() == "YES":
+        return "MTBC supported", "Kraken2/Bracken"
+
+    return "MTBC not supported", "Kraken2/Bracken"
 
 tb_rows = read_tsv(tb_tsv)
 species_rows = read_tsv(species_tsv)
 depth_rows = read_tsv(depth_tsv)
 
 snp_samples, snp_values = read_snp_matrix(snp_matrix)
-tree_sample_set = set(snp_samples)
+tree_sample_set = set(normalize_sample_id(s) for s in snp_samples)
 
 depth_by_sample = {}
 
@@ -3359,7 +4654,7 @@ for r in depth_rows:
     )
 
     if sid:
-        depth_by_sample[sid] = depth
+        depth_by_sample[normalize_sample_id(sid)] = depth
 
 species_by_sample = {}
 
@@ -3368,6 +4663,7 @@ for r in species_rows:
         r.get("Sample_ID")
         or r.get("sample")
         or r.get("sample_id")
+        or r.get("Sample ID")
         or ""
     )
 
@@ -3375,15 +4671,43 @@ for r in species_rows:
         r.get("Species_Identified")
         or r.get("Species identified")
         or r.get("species")
+        or r.get("Species")
         or ""
     )
 
     evidence = r.get("Evidence") or r.get("evidence") or ""
 
+    mtbc_supported = infer_kraken_mtbc_support(r)
+
+    mtbc_reads = (
+        r.get("MTBC_Reads")
+        or r.get("mtbc_reads")
+        or r.get("MTBC reads")
+        or "Not available"
+    )
+
+    mtbc_percent = (
+        r.get("MTBC_Percent")
+        or r.get("mtbc_percent")
+        or r.get("MTBC percent")
+        or extract_mtbc_percent(evidence)
+    )
+
+    selection_basis = (
+        r.get("Selection_Basis")
+        or r.get("selection_basis")
+        or r.get("Selection basis")
+        or ""
+    )
+
     if sample:
-        species_by_sample[sample] = {
+        species_by_sample[normalize_sample_id(sample)] = {
             "species": species,
-            "evidence": evidence
+            "evidence": evidence,
+            "mtbc_supported": mtbc_supported,
+            "mtbc_reads": mtbc_reads,
+            "mtbc_percent": mtbc_percent,
+            "selection_basis": selection_basis
         }
 
 lineage_counts = Counter()
@@ -3392,10 +4716,14 @@ qc_rows = []
 
 for r in tb_rows:
     sample = r.get("sample", "")
+    sample_norm = normalize_sample_id(sample)
 
-    sp = species_by_sample.get(sample, {})
+    sp = species_by_sample.get(sample_norm, {})
     kraken_species = sp.get("species", "")
     kraken_evidence = sp.get("evidence", "")
+    kraken_mtbc_supported = sp.get("mtbc_supported", "NO")
+    kraken_mtbc_reads = sp.get("mtbc_reads", "Not available")
+    kraken_selection_basis = sp.get("selection_basis", "")
 
     main_lineage = normalize_missing(
         r.get("main_lineage", ""),
@@ -3410,20 +4738,32 @@ for r in tb_rows:
     lineage_group = normalize_lineage(main_lineage, sub_lineage)
     lineage_counts[lineage_group] += 1
 
+    ###########################################################################
+    # Kraken2/Bracken-based phylogeny selection
+    #
+    # selected_for_phylogeny comes from mtbc_selected in TB_PROFILER_AND_MTBC_FILTER,
+    # which should now be based only on Kraken2/Bracken MTBC support.
+    #
+    # TB-Profiler lineage, species, and resistance are annotations only.
+    ###########################################################################
+
     selected_for_phylogeny = (
         "YES"
         if str(r.get("mtbc_selected", "")).strip().upper() == "YES"
         else "NO"
     )
 
-    included_in_tree = (
-        "YES"
-        if tree_sample_set and sample in tree_sample_set
-        else selected_for_phylogeny
-    )
+    if kraken_mtbc_supported == "YES" and selected_for_phylogeny != "YES":
+        selected_for_phylogeny = "YES"
 
-    mean_depth = depth_by_sample.get(sample, "Not available")
-    mtbc_percent = extract_mtbc_percent(kraken_evidence)
+    if tree_sample_set:
+        included_in_tree = "YES" if sample_norm in tree_sample_set else "NO"
+    else:
+        included_in_tree = "Not determined"
+
+    mean_depth = depth_by_sample.get(sample_norm, "Not available")
+
+    mtbc_percent = sp.get("mtbc_percent") or extract_mtbc_percent(kraken_evidence)
 
     resistance_profile = normalize_missing(
         r.get("dr_type", ""),
@@ -3437,18 +4777,31 @@ for r in tb_rows:
 
     drug_resistance = resistance_detected(resistance_profile, resistant_drugs)
 
-    integrated_status_text = r.get("species", "")
-    mtbc_status, support_source, lineage_status = split_integrated_mtbc_status(integrated_status_text)
+    mtbc_status, support_source = split_integrated_mtbc_status_from_kraken(kraken_mtbc_supported)
 
     if lineage_group != "Not resolved by TB-Profiler":
         lineage_status = "Resolved by TB-Profiler"
+    else:
+        lineage_status = "Not resolved by TB-Profiler"
+
+    selection_reason = (
+        r.get("mtbc_selection_reason", "")
+        or kraken_selection_basis
+        or "Selected for phylogeny if Kraken2/Bracken species typing supports MTBC"
+    )
+
+    if selected_for_phylogeny == "NO" and not selection_reason:
+        selection_reason = "Not selected for phylogeny because Kraken2/Bracken did not support MTBC"
 
     metadata_rows.append({
         "sample": sample,
         "integrated_mtbc_status": mtbc_status,
         "mtbc_support_source": support_source,
-        "tbprofiler_lineage_status": lineage_status,
+        "kraken_mtbc_supported": kraken_mtbc_supported,
         "kraken_species": kraken_species,
+        "kraken_mtbc_reads": kraken_mtbc_reads,
+        "mtbc_percent": mtbc_percent,
+        "tbprofiler_lineage_status": lineage_status,
         "tbprofiler_main_lineage": main_lineage,
         "tbprofiler_sub_lineage": sub_lineage,
         "lineage_group": lineage_group,
@@ -3456,19 +4809,20 @@ for r in tb_rows:
         "drug_resistance_detected": drug_resistance,
         "resistant_drugs": resistant_drugs,
         "mean_depth": mean_depth,
-        "mtbc_percent": mtbc_percent,
         "selected_for_phylogeny": selected_for_phylogeny,
         "included_in_tree": included_in_tree,
+        "selection_basis": selection_reason,
         "tbprofiler_status": r.get("status", "")
     })
 
     qc_rows.append({
         "sample": sample,
         "mean_depth": mean_depth,
+        "kraken_mtbc_supported": kraken_mtbc_supported,
         "mtbc_percent": mtbc_percent,
         "selected_for_phylogeny": selected_for_phylogeny,
         "included_in_tree": included_in_tree,
-        "reason": r.get("mtbc_selection_reason", "") or "Not reported"
+        "reason": selection_reason
     })
 
 with (outdir / "lineage_distribution.tsv").open("w", newline="") as out:
@@ -3485,8 +4839,11 @@ with (outdir / "tb_surveillance_metadata.tsv").open("w", newline="") as out:
         "sample",
         "integrated_mtbc_status",
         "mtbc_support_source",
-        "tbprofiler_lineage_status",
+        "kraken_mtbc_supported",
         "kraken_species",
+        "kraken_mtbc_reads",
+        "mtbc_percent",
+        "tbprofiler_lineage_status",
         "tbprofiler_main_lineage",
         "tbprofiler_sub_lineage",
         "lineage_group",
@@ -3494,9 +4851,9 @@ with (outdir / "tb_surveillance_metadata.tsv").open("w", newline="") as out:
         "drug_resistance_detected",
         "resistant_drugs",
         "mean_depth",
-        "mtbc_percent",
         "selected_for_phylogeny",
         "included_in_tree",
+        "selection_basis",
         "tbprofiler_status"
     ]
 
@@ -3508,6 +4865,7 @@ with (outdir / "qc_filtering_rationale.tsv").open("w", newline="") as out:
     fieldnames = [
         "sample",
         "mean_depth",
+        "kraken_mtbc_supported",
         "mtbc_percent",
         "selected_for_phylogeny",
         "included_in_tree",
@@ -3550,7 +4908,7 @@ def write_lineage_svg(counts, outfile):
         ]
 
     svg.append(
-        f'<text x="{width/2}" y="{height-24}" text-anchor="middle" font-family="Arial" font-size="12" fill="#475569">Lineage groups are summarized from TB-Profiler main-lineage and sub-lineage fields.</text></svg>'
+        f'<text x="{width/2}" y="{height-24}" text-anchor="middle" font-family="Arial" font-size="12" fill="#475569">Lineage groups are summarized from TB-Profiler main-lineage and sub-lineage fields. Lineage does not determine phylogeny selection.</text></svg>'
     )
 
     outfile.write_text("\n".join(svg), encoding="utf-8")
@@ -3662,12 +5020,79 @@ def write_heatmap(path, outfile):
 write_lineage_svg(lineage_counts, outdir / "lineage_distribution.svg")
 write_heatmap(snp_matrix, outdir / "snp_distance_heatmap.svg")
 
+summary_rows = []
+summary_rows.append('<!doctype html>')
+summary_rows.append('<html>')
+summary_rows.append('<head>')
+summary_rows.append('<meta charset="utf-8">')
+summary_rows.append('<title>Surveillance Summary</title>')
+summary_rows.append('<style>')
+summary_rows.append('body{font-family:Arial,Helvetica,sans-serif;margin:24px;background:#f8fafc;color:#0f172a}')
+summary_rows.append('.card{background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;padding:18px;margin-bottom:18px;box-shadow:0 1px 4px rgba(15,23,42,.08)}')
+summary_rows.append('table{border-collapse:collapse;width:100%;font-size:13px;background:#ffffff}')
+summary_rows.append('th,td{border:1px solid #e2e8f0;padding:8px;vertical-align:top}')
+summary_rows.append('th{background:#1d4ed8;color:#ffffff}')
+summary_rows.append('.muted{color:#475569}')
+summary_rows.append('.yes{display:inline-block;border-radius:999px;padding:4px 8px;background:#dcfce7;color:#166534;font-weight:700}')
+summary_rows.append('.no{display:inline-block;border-radius:999px;padding:4px 8px;background:#fee2e2;color:#991b1b;font-weight:700}')
+summary_rows.append('.unknown{display:inline-block;border-radius:999px;padding:4px 8px;background:#e5e7eb;color:#374151;font-weight:700}')
+summary_rows.append('</style>')
+summary_rows.append('</head>')
+summary_rows.append('<body>')
+summary_rows.append('<div class="card">')
+summary_rows.append('<h1>Surveillance Summary</h1>')
+summary_rows.append('<p class="muted">This summary integrates Kraken2/Bracken species typing, TB-Profiler lineage and resistance annotations, mean-depth metadata, and SNP-distance outputs.</p>')
+summary_rows.append('<p class="muted"><strong>Phylogeny selection rule:</strong> samples are selected for Snippy/core-SNP/IQ-TREE only when Kraken2/Bracken supports MTBC. TB-Profiler lineage, species, and resistance are reported as annotations and do not determine phylogeny selection.</p>')
+summary_rows.append('<p class="muted"><strong>Tree inclusion rule:</strong> after Kraken2/Bracken-based selection, IQ-TREE-related outputs reflect only samples that passed downstream alignment and SNP-distance/tree generation steps.</p>')
+summary_rows.append('</div>')
+
+summary_rows.append('<div class="card">')
+summary_rows.append('<h2>Kraken2/Bracken-based phylogeny selection and tree inclusion</h2>')
+summary_rows.append('<table>')
+summary_rows.append('<thead><tr>')
+summary_rows.append('<th>Sample</th>')
+summary_rows.append('<th>Kraken MTBC supported</th>')
+summary_rows.append('<th>Selected for phylogeny</th>')
+summary_rows.append('<th>Included in tree/SNP matrix</th>')
+summary_rows.append('<th>MTBC percent</th>')
+summary_rows.append('<th>Mean depth</th>')
+summary_rows.append('<th>Selection basis</th>')
+summary_rows.append('</tr></thead>')
+summary_rows.append('<tbody>')
+
+for row in metadata_rows:
+    selected = row.get("selected_for_phylogeny", "")
+    included = row.get("included_in_tree", "")
+    kraken_supported = row.get("kraken_mtbc_supported", "")
+
+    selected_class = "yes" if selected == "YES" else "no"
+    kraken_class = "yes" if kraken_supported == "YES" else "no"
+
+    if included == "YES":
+        included_class = "yes"
+    elif included == "NO":
+        included_class = "no"
+    else:
+        included_class = "unknown"
+
+    summary_rows.append(
+        "<tr>"
+        f"<td>{safe(row.get('sample', ''))}</td>"
+        f"<td><span class='{kraken_class}'>{safe(kraken_supported)}</span></td>"
+        f"<td><span class='{selected_class}'>{safe(selected)}</span></td>"
+        f"<td><span class='{included_class}'>{safe(included)}</span></td>"
+        f"<td>{safe(row.get('mtbc_percent', ''))}</td>"
+        f"<td>{safe(row.get('mean_depth', ''))}</td>"
+        f"<td>{safe(row.get('selection_basis', ''))}</td>"
+        "</tr>"
+    )
+
+summary_rows.append('</tbody></table>')
+summary_rows.append('</div>')
+summary_rows.append('</body></html>')
+
 (outdir / "surveillance_summary.html").write_text(
-    '<!doctype html><html><head><meta charset="utf-8"><title>Surveillance Summary</title></head>'
-    '<body>'
-    '<h1>Surveillance Summary</h1>'
-    '<p>TB-Profiler lineage summaries, Kraken2/Bracken-supported MTBC classification, SNP heatmap, QC rationale, mean-depth metadata, and surveillance metadata were generated.</p>'
-    '</body></html>',
+    "\n".join(summary_rows),
     encoding="utf-8"
 )
 PY
@@ -3695,6 +5120,7 @@ task MERGE_TB_REPORTS {
     String docker_image = "python:3.11-slim"
     File? tbprofiler_html
     File? tbprofiler_summary_tsv
+    File? resistance_profile_summary_tsv
     File? tbprofiler_mutation_evidence_tsv
     File? tbprofiler_mutation_evidence_html
     File? mtbc_samples_txt
@@ -3704,6 +5130,10 @@ task MERGE_TB_REPORTS {
     File? trimming_report_html
     File? variant_summary_html
     File? iqtree_report
+    File? iqtree_excluded_samples_tsv
+    File? iqtree_included_samples_tsv
+    File? iqtree_filtering_summary_txt
+    File? iqtree_status
     File? tree_image
     File? phylogenetic_tree_newick
     File? pairwise_tree_newick
@@ -3726,6 +5156,7 @@ task MERGE_TB_REPORTS {
     mkdir -p final_report
 
     tb_tsv="~{if defined(tbprofiler_summary_tsv) then tbprofiler_summary_tsv else ""}"
+    resistance_tsv="~{if defined(resistance_profile_summary_tsv) then resistance_profile_summary_tsv else ""}"
     species_html="~{if defined(species_typing_html) then species_typing_html else ""}"
     species_tsv="~{if defined(species_typing_tsv) then species_typing_tsv else ""}"
     nonsyn_tsv="~{if defined(nonsynonymous_mutations_tsv) then nonsynonymous_mutations_tsv else ""}"
@@ -3742,9 +5173,29 @@ task MERGE_TB_REPORTS {
     trim_html="~{if defined(trimming_report_html) then trimming_report_html else ""}"
     variant_html="~{if defined(variant_summary_html) then variant_summary_html else ""}"
     iqtree_txt="~{if defined(iqtree_report) then iqtree_report else ""}"
+    iqtree_excluded_tsv="~{if defined(iqtree_excluded_samples_tsv) then iqtree_excluded_samples_tsv else ""}"
+    iqtree_included_tsv="~{if defined(iqtree_included_samples_tsv) then iqtree_included_samples_tsv else ""}"
+    iqtree_filtering_summary_txt="~{if defined(iqtree_filtering_summary_txt) then iqtree_filtering_summary_txt else ""}"
+    iqtree_status_txt="~{if defined(iqtree_status) then iqtree_status else ""}"
 
     if [ -n "$tree_png" ] && [ -f "$tree_png" ]; then
       cp "$tree_png" final_report/mtbc_tree.png || true
+    fi
+
+    if [ -n "$iqtree_excluded_tsv" ] && [ -f "$iqtree_excluded_tsv" ]; then
+      cp "$iqtree_excluded_tsv" final_report/excluded_from_iqtree.tsv || true
+    fi
+
+    if [ -n "$iqtree_included_tsv" ] && [ -f "$iqtree_included_tsv" ]; then
+      cp "$iqtree_included_tsv" final_report/included_in_iqtree.tsv || true
+    fi
+
+    if [ -n "$iqtree_filtering_summary_txt" ] && [ -f "$iqtree_filtering_summary_txt" ]; then
+      cp "$iqtree_filtering_summary_txt" final_report/alignment_filtering_summary.txt || true
+    fi
+
+    if [ -n "$iqtree_status_txt" ] && [ -f "$iqtree_status_txt" ]; then
+      cp "$iqtree_status_txt" final_report/iqtree_status.txt || true
     fi
 
     if [ -n "$lineage_svg" ] && [ -f "$lineage_svg" ]; then
@@ -3763,9 +5214,18 @@ task MERGE_TB_REPORTS {
       cp "$qc_rationale_tsv" final_report/qc_filtering_rationale.tsv || true
     fi
 
+    if [ -n "$resistance_tsv" ] && [ -f "$resistance_tsv" ]; then
+      cp "$resistance_tsv" final_report/resistance_profile_summary.tsv || true
+    fi
+
     if [ -z "$tb_tsv" ] || [ ! -f "$tb_tsv" ]; then
       echo -e "sample\tspecies\tmain_lineage\tsub_lineage\tdr_type\tresistant_drugs\tresistance_mutations\tkey_mutations\tjson_file\tmtbc_selected\tmtbc_selection_reason\tstatus" > final_report/empty.tsv
       tb_tsv="final_report/empty.tsv"
+    fi
+
+    if [ -z "$resistance_tsv" ] || [ ! -f "$resistance_tsv" ]; then
+      echo -e "sample_id\tresistance_profile\tresistant_drugs\tresistance_mutations\tkey_mutations\tstatus" > final_report/empty_resistance_profile_summary.tsv
+      resistance_tsv="final_report/empty_resistance_profile_summary.tsv"
     fi
 
     if [ -z "$species_tsv" ] || [ ! -f "$species_tsv" ]; then
@@ -3793,7 +5253,27 @@ task MERGE_TB_REPORTS {
       snp_cluster_tsv="final_report/empty_snp_clusters.tsv"
     fi
 
-    python3 - "$tb_tsv" "$species_tsv" "$nonsyn_tsv" "$mutation_tsv" "$snp_pairs_tsv" "$snp_cluster_tsv" "$lineage_tsv" "$surveillance_metadata_tsv" "$qc_rationale_tsv" "$qc_html" "$trim_html" "$variant_html" "$iqtree_txt" "$species_html" <<'PY'
+    if [ -z "$iqtree_excluded_tsv" ] || [ ! -f "$iqtree_excluded_tsv" ]; then
+      echo -e "sample\talignment_length\tacgt_count\tmissing_count\tmissing_fraction\tthreshold\treason\texclusion_note" > final_report/empty_excluded_from_iqtree.tsv
+      iqtree_excluded_tsv="final_report/empty_excluded_from_iqtree.tsv"
+    fi
+
+    if [ -z "$iqtree_included_tsv" ] || [ ! -f "$iqtree_included_tsv" ]; then
+      echo -e "sample\talignment_length\tacgt_count\tmissing_count\tmissing_fraction" > final_report/empty_included_in_iqtree.tsv
+      iqtree_included_tsv="final_report/empty_included_in_iqtree.tsv"
+    fi
+
+    if [ -z "$iqtree_filtering_summary_txt" ] || [ ! -f "$iqtree_filtering_summary_txt" ]; then
+      echo "IQ-TREE alignment filtering summary was not provided." > final_report/empty_alignment_filtering_summary.txt
+      iqtree_filtering_summary_txt="final_report/empty_alignment_filtering_summary.txt"
+    fi
+
+    if [ -z "$iqtree_status_txt" ] || [ ! -f "$iqtree_status_txt" ]; then
+      echo "unknown_status" > final_report/empty_iqtree_status.txt
+      iqtree_status_txt="final_report/empty_iqtree_status.txt"
+    fi
+
+    python3 - "$tb_tsv" "$resistance_tsv" "$species_tsv" "$nonsyn_tsv" "$mutation_tsv" "$snp_pairs_tsv" "$snp_cluster_tsv" "$lineage_tsv" "$surveillance_metadata_tsv" "$qc_rationale_tsv" "$qc_html" "$trim_html" "$variant_html" "$iqtree_txt" "$species_html" "$iqtree_excluded_tsv" "$iqtree_included_tsv" "$iqtree_filtering_summary_txt" "$iqtree_status_txt" <<'PY'
 import csv
 import html
 import re
@@ -3802,7 +5282,7 @@ from pathlib import Path
 from collections import defaultdict
 from datetime import datetime, timezone
 
-summary_tsv, species_tsv, nonsyn_tsv, mutation_tsv, snp_pairs_tsv, snp_cluster_tsv, lineage_tsv, surveillance_metadata_tsv, qc_rationale_tsv, qc_html, trim_html, variant_html, iqtree_txt, species_html = sys.argv[1:15]
+summary_tsv, resistance_tsv, species_tsv, nonsyn_tsv, mutation_tsv, snp_pairs_tsv, snp_cluster_tsv, lineage_tsv, surveillance_metadata_tsv, qc_rationale_tsv, qc_html, trim_html, variant_html, iqtree_txt, species_html, iqtree_excluded_tsv, iqtree_included_tsv, iqtree_filtering_summary_txt, iqtree_status_txt = sys.argv[1:20]
 
 outdir = Path("final_report")
 outdir.mkdir(exist_ok=True)
@@ -3816,19 +5296,30 @@ run_stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_UTC")
 )
 
 RESISTANCE_COLORS = {
-    "No resistance detected by TB-Profiler": "#2a9d8f",
-    "Resistance not determined by TB-Profiler": "#999999",
     "Sensitive": "#2a9d8f",
+    "Hr-TB": "#2292dc",
+    "MDR/RR-TB": "#ed641e",
+    "Pre-XDR-TB": "#ed2828",
+    "XDR-TB": "#5a189a",
     "Monoresistance": "#fcd33d",
-    "HR-TB": "#2292dc",
-    "RR-TB": "#3b82f6",
-    "MDR": "#ed641e",
-    "Pre-XDR": "#ed2828",
-    "XDR": "#5a189a",
+    "Polyresistance": "#2292dc",
     "Other drug resistance": "#2292dc",
-    "Unknown": "#999999",
-    "Not determined": "#999999",
+    "Resistance not determined by TB-Profiler": "#999999",
+    "Unknown": "#999999"
 }
+
+RESISTANCE_ORDER = [
+    "Sensitive",
+    "Hr-TB",
+    "MDR/RR-TB",
+    "Pre-XDR-TB",
+    "XDR-TB",
+    "Monoresistance",
+    "Polyresistance",
+    "Other drug resistance",
+    "Resistance not determined by TB-Profiler",
+    "Unknown"
+]
 
 REFERENCE_NAMES = {
     "reference",
@@ -3848,6 +5339,14 @@ def clean(v):
 
 def lower_clean(v):
     return clean(v).lower()
+
+def normalize_sample_id(name):
+    s = clean(name)
+    s = s.split("/")[-1]
+    s = s.split("\\")[-1]
+    s = re.sub(r"(\.fastq\.gz|\.fq\.gz|\.fastq|\.fq|\.gz)$", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"(_R?1_paired|_R?2_paired|_R?1|_R?2|_1_paired|_2_paired|_1|_2|\.R?1|\.R?2|\.1|\.2)$", "", s)
+    return s.strip()
 
 def is_reference_name(name):
     n = lower_clean(name)
@@ -3879,6 +5378,7 @@ def normalize_missing(v, replacement="Not reported"):
     return x
 
 rows = read_tsv_rows(summary_tsv)
+resistance_rows = read_tsv_rows(resistance_tsv)
 species_rows = read_tsv_rows(species_tsv)
 nonsyn_rows = read_tsv_rows(nonsyn_tsv)
 mutation_rows = read_tsv_rows(mutation_tsv)
@@ -3887,6 +5387,126 @@ snp_cluster_rows = read_tsv_rows(snp_cluster_tsv)
 lineage_rows = read_tsv_rows(lineage_tsv)
 surveillance_metadata_rows = read_tsv_rows(surveillance_metadata_tsv)
 qc_rationale_rows = read_tsv_rows(qc_rationale_tsv)
+iqtree_excluded_rows = read_tsv_rows(iqtree_excluded_tsv)
+iqtree_included_rows = read_tsv_rows(iqtree_included_tsv)
+iqtree_filtering_summary_text = read_optional_file(iqtree_filtering_summary_txt)
+iqtree_status_text = read_optional_file(iqtree_status_txt).strip() or "unknown_status"
+
+# -------------------------------------------------------------------------
+# IQ-TREE inclusion/exclusion reporting maps
+# -------------------------------------------------------------------------
+# Important distinction:
+#   Selected for MTBC workflow = sample retained by MTBC support logic
+#   Included in IQ-TREE        = sample retained after core-SNP alignment
+#                                quality filtering for IQ-TREE inference
+# -------------------------------------------------------------------------
+
+iqtree_included_map = {}
+iqtree_excluded_map = {}
+
+for r in iqtree_included_rows:
+    sample = normalize_sample_id(r.get("sample") or r.get("Sample") or "")
+    if sample:
+        iqtree_included_map[sample] = r
+
+for r in iqtree_excluded_rows:
+    sample = normalize_sample_id(r.get("sample") or r.get("Sample") or "")
+    if sample:
+        iqtree_excluded_map[sample] = r
+
+def get_iqtree_inclusion_info(sample):
+    sample_id = normalize_sample_id(sample)
+
+    if sample_id in iqtree_excluded_map:
+        r = iqtree_excluded_map[sample_id]
+        note = clean(r.get("exclusion_note"))
+        reason = clean(r.get("reason"))
+        missing_fraction = clean(r.get("missing_fraction"))
+        threshold = clean(r.get("threshold"))
+
+        if not note:
+            try:
+                missing_percent = f"{float(missing_fraction) * 100:.2f}%"
+            except Exception:
+                missing_percent = missing_fraction or "not reported"
+
+            try:
+                threshold_percent = f"{float(threshold) * 100:.0f}%" if threshold else "50%"
+            except Exception:
+                threshold_percent = threshold or "50%"
+
+            reason_low = reason.lower()
+
+            if reason_low == "no_usable_acgt_bases":
+                note = (
+                    f"Excluded from IQ-TREE because the core-SNP alignment had "
+                    f"{missing_percent} missing/ambiguous/gap content and no usable ACGT bases."
+                )
+            elif reason_low.startswith("missing_fraction_ge_"):
+                note = (
+                    f"Excluded from IQ-TREE because {missing_percent} of the core-SNP alignment "
+                    f"was missing/ambiguous/gap content, exceeding the allowed threshold of {threshold_percent}."
+                )
+            elif reason_low == "empty_sequence":
+                note = "Excluded from IQ-TREE because the core-SNP alignment sequence was empty."
+            else:
+                note = "Excluded from IQ-TREE because it did not meet tree-building alignment-quality requirements."
+
+        return {
+            "status": "NO",
+            "note": note,
+            "reason": reason,
+            "row": r
+        }
+
+    if sample_id in iqtree_included_map:
+        return {
+            "status": "YES",
+            "note": "Retained after IQ-TREE core-SNP alignment quality filtering.",
+            "reason": "included_after_alignment_filtering",
+            "row": iqtree_included_map[sample_id]
+        }
+
+    return {
+        "status": "Not reported",
+        "note": "No IQ-TREE inclusion/exclusion record was available for this sample.",
+        "reason": "not_reported",
+        "row": {}
+    }
+
+def iqtree_inclusion_html(sample):
+    info = get_iqtree_inclusion_info(sample)
+    status = info["status"]
+    note = info["note"]
+
+    if status == "YES":
+        return green_badge("YES") + f"<br><small>{safe(note)}</small>"
+
+    if status == "NO":
+        return red_badge("NO") + f"<br><small>{safe(note)}</small>"
+
+    return neutral_badge("Not reported") + f"<br><small>{safe(note)}</small>"
+
+def selected_for_mtbc_workflow_html(mtbc_selected, mtbc_reason):
+    selected = clean(mtbc_selected).upper()
+
+    if selected == "YES":
+        return green_badge("YES") + f"<br><small>{safe(mtbc_reason)}</small>"
+
+    if selected == "NO":
+        return red_badge("NO") + f"<br><small>{safe(mtbc_reason)}</small>"
+
+    return neutral_badge("Not reported") + f"<br><small>{safe(mtbc_reason)}</small>"
+
+iqtree_included_count = len([
+    s for s in iqtree_included_map
+    if s and not is_reference_name(s)
+])
+
+iqtree_excluded_count = len([
+    s for s in iqtree_excluded_map
+    if s and not is_reference_name(s)
+])
 
 def normalize_drug_name(x):
     s = lower_clean(x)
@@ -3960,6 +5580,7 @@ def split_drug_tokens(value):
     txt = re.sub(r"\band\b", ",", txt, flags=re.IGNORECASE)
 
     out = []
+
     for part in txt.split(","):
         p = normalize_drug_name(part)
         if p and p not in {
@@ -3979,44 +5600,52 @@ def split_drug_tokens(value):
 
     return out
 
-def classify_resistance(dr_type, resistant_drugs):
-    profile_raw = clean(dr_type)
-    profile = profile_raw.lower().replace("_", "-")
-    drugs = set(split_drug_tokens(resistant_drugs))
+def normalize_resistance_profile(value):
+    raw = clean(value)
+    low = raw.lower().replace("_", "-")
 
-    if profile in {
-        "",
-        "none",
-        "none reported",
-        "not reported",
-        "unknown",
-        "na",
-        "n/a",
-        "not determined",
-        "resistance not determined by tb-profiler"
-    }:
+    if low in {"", "none", "none reported", "not reported", "unknown", "na", "n/a", "not determined"}:
+        return "Unknown"
+
+    if "resistance not determined" in low:
         return "Resistance not determined by TB-Profiler"
 
-    if "no resistance detected" in profile:
-        return "No resistance detected by TB-Profiler"
+    if low in {"sensitive", "susceptible"} or "no resistance detected" in low:
+        return "Sensitive"
 
-    if profile in {"susceptible", "sensitive"} and not drugs:
-        return "No resistance detected by TB-Profiler"
+    if "xdr" in low and "pre" not in low:
+        return "XDR-TB"
 
-    if "xdr" in profile and "pre" not in profile:
-        return "XDR"
+    if "pre-xdr" in low or "pre xdr" in low or "prexdr" in low:
+        return "Pre-XDR-TB"
 
-    if "pre-xdr" in profile or "pre xdr" in profile or "prexdr" in profile:
-        return "Pre-XDR"
+    if "mdr" in low or re.search(r"\brr[- ]?tb\b", low):
+        return "MDR/RR-TB"
 
-    if "mdr" in profile:
-        return "MDR"
+    if re.search(r"\bhr[- ]?tb\b", low) or "isoniazid-resistant" in low:
+        return "Hr-TB"
 
-    if re.search(r"\bhr[- ]?tb\b", profile):
-        return "HR-TB"
+    if "mono" in low:
+        return "Monoresistance"
 
-    if re.search(r"\brr[- ]?tb\b", profile):
-        return "RR-TB"
+    if "poly" in low:
+        return "Polyresistance"
+
+    if "other drug resistance" in low:
+        return "Other drug resistance"
+
+    return "Unknown"
+
+def classify_resistance_fallback(dr_type, resistant_drugs):
+    profile = normalize_resistance_profile(dr_type)
+
+    if profile != "Unknown":
+        return profile
+
+    drugs = set(split_drug_tokens(resistant_drugs))
+
+    if not drugs:
+        return "Sensitive"
 
     isoniazid = "isoniazid" in drugs
     rifampicin = "rifampicin" in drugs
@@ -4037,46 +5666,116 @@ def classify_resistance(dr_type, resistant_drugs):
     has_fq = bool(drugs.intersection(fluoroquinolones))
     has_group_a_additional = bool(drugs.intersection(group_a_additional))
 
-    if isoniazid and rifampicin and has_fq and has_group_a_additional:
-        return "XDR"
+    if rifampicin and has_fq and has_group_a_additional:
+        return "XDR-TB"
 
-    if isoniazid and rifampicin and has_fq:
-        return "Pre-XDR"
+    if rifampicin and has_fq:
+        return "Pre-XDR-TB"
 
-    if isoniazid and rifampicin:
-        return "MDR"
-
-    if rifampicin and not isoniazid:
-        return "RR-TB"
+    if rifampicin:
+        return "MDR/RR-TB"
 
     if isoniazid and not rifampicin:
-        return "HR-TB"
+        return "Hr-TB"
 
     if len(drugs) == 1:
         return "Monoresistance"
 
-    if len(drugs) > 1:
-        return "Other drug resistance"
+    return "Polyresistance"
 
-    if profile_raw and profile not in {"not reported", "unknown", "na", "n/a", "none"}:
-        return profile_raw
+def build_resistance_profile_map():
+    profile_map = {}
 
-    return "Resistance not determined by TB-Profiler"
+    for r in resistance_rows:
+        sample = (
+            r.get("sample_id") or
+            r.get("sample") or
+            r.get("Sample ID") or
+            ""
+        )
+
+        sample_id = normalize_sample_id(sample)
+
+        if not sample_id:
+            continue
+
+        profile_raw = (
+            r.get("resistance_profile") or
+            r.get("dr_type") or
+            r.get("Resistance profile") or
+            ""
+        )
+
+        resistant_drugs = (
+            r.get("resistant_drugs") or
+            r.get("Predicted resistant drugs") or
+            r.get("drug_resistance") or
+            ""
+        )
+
+        resistance_mutations = (
+            r.get("resistance_mutations") or
+            r.get("Resistance-associated mutations") or
+            ""
+        )
+
+        key_mutations = (
+            r.get("key_mutations") or
+            r.get("All key mutations") or
+            ""
+        )
+
+        status = r.get("status") or ""
+
+        profile = normalize_resistance_profile(profile_raw)
+
+        if profile == "Unknown":
+            profile = classify_resistance_fallback(profile_raw, resistant_drugs)
+
+        profile_map[sample_id] = {
+            "resistance_profile": profile,
+            "resistant_drugs": normalize_missing(resistant_drugs, "None reported"),
+            "resistance_mutations": normalize_missing(resistance_mutations, "None reported"),
+            "key_mutations": normalize_missing(key_mutations, "None reported"),
+            "status": status
+        }
+
+    return profile_map
+
+resistance_profile_map = build_resistance_profile_map()
+
+def get_resistance_info(sample, fallback_row=None):
+    sample_id = normalize_sample_id(sample)
+
+    if sample_id in resistance_profile_map:
+        return resistance_profile_map[sample_id]
+
+    fallback_row = fallback_row or {}
+    fallback_profile = classify_resistance_fallback(
+        fallback_row.get("dr_type") or fallback_row.get("resistance_profile") or "",
+        fallback_row.get("resistant_drugs") or ""
+    )
+
+    return {
+        "resistance_profile": fallback_profile,
+        "resistant_drugs": normalize_missing(fallback_row.get("resistant_drugs"), "None reported"),
+        "resistance_mutations": normalize_missing(fallback_row.get("resistance_mutations"), "None reported"),
+        "key_mutations": normalize_missing(fallback_row.get("key_mutations"), "None reported"),
+        "status": fallback_row.get("status") or ""
+    }
 
 def is_drug_resistant_category(category):
     return category not in {
-        "No resistance detected by TB-Profiler",
-        "Resistance not determined by TB-Profiler",
         "Sensitive",
+        "Resistance not determined by TB-Profiler",
         "Unknown",
-        "Not determined",
         ""
     }
 
 def badge(label):
-    label = normalize_missing(label, "Resistance not determined by TB-Profiler")
+    label = normalize_resistance_profile(label)
     color = RESISTANCE_COLORS.get(label, RESISTANCE_COLORS["Unknown"])
-    text_color = "#111111" if label == "Monoresistance" else "#ffffff"
+    text_color = "#ffffff"
     return f'<span class="res-badge" style="background:{color};color:{text_color} !important;">{safe(label)}</span>'
 
 def green_badge(label):
@@ -4117,6 +5816,7 @@ def cluster_badge(label):
 total_samples = max(len(species_rows), len(rows))
 
 mtbc_retained = 0
+
 for r in rows:
     if clean(r.get("mtbc_selected")).upper() == "YES":
         mtbc_retained += 1
@@ -4124,8 +5824,11 @@ for r in rows:
 non_mtbc = max(total_samples - mtbc_retained, 0)
 
 drug_resistant = 0
+
 for r in rows:
-    category = classify_resistance(r.get("dr_type"), r.get("resistant_drugs"))
+    info = get_resistance_info(r.get("sample"), r)
+    category = info["resistance_profile"]
+
     if is_drug_resistant_category(category):
         drug_resistant += 1
 
@@ -4148,6 +5851,7 @@ def build_qc_section():
         body = '<tr><td colspan="5">No sample-level QC records available.</td></tr>'
     else:
         body = []
+
         for s in sample_ids:
             body.append(
                 "<tr>"
@@ -4158,6 +5862,7 @@ def build_qc_section():
                 '<td><span class="badge badge-green" style="background:#28A745 !important;color:white !important;font-weight:700;">Proceed</span></td>'
                 "</tr>"
             )
+
         body = "".join(body)
 
     embedded = ""
@@ -4204,6 +5909,7 @@ def build_species_section():
         body = '<tr><td colspan="3">No species typing results were generated.</td></tr>'
     else:
         body = []
+
         for r in species_rows:
             sample = r.get("Sample_ID") or r.get("sample") or ""
             species = r.get("Species_Identified") or r.get("species") or "No species-level Mycobacterium call"
@@ -4256,17 +5962,22 @@ def build_tb_rows():
         main_lineage = normalize_missing(r.get("main_lineage"), "Not resolved by TB-Profiler")
         sub_lineage = normalize_missing(r.get("sub_lineage"), "Not resolved by TB-Profiler")
         lineage = f"{safe(main_lineage)} / {safe(sub_lineage)}"
-        dr_type = r.get("dr_type") or "Resistance not determined by TB-Profiler"
-        resistant_drugs = r.get("resistant_drugs") or "None reported"
-        category = classify_resistance(dr_type, resistant_drugs)
+
+        info = get_resistance_info(sample, r)
+        category = info["resistance_profile"]
+        resistant_drugs = info["resistant_drugs"]
+        key_mutations = info["key_mutations"]
+
+        if key_mutations and key_mutations != "None reported":
+            resistance_detail = f"{resistant_drugs}<br><small><strong>Key mutations:</strong> {safe(key_mutations)}</small>"
+        else:
+            resistance_detail = safe(resistant_drugs)
 
         mtbc_selected = clean(r.get("mtbc_selected")).upper()
         mtbc_reason = r.get("mtbc_selection_reason") or ""
 
-        if mtbc_selected == "YES":
-            decision_html = green_badge("Selected")
-        else:
-            decision_html = red_badge("Excluded")
+        selected_html = selected_for_mtbc_workflow_html(mtbc_selected, mtbc_reason)
+        iqtree_html = iqtree_inclusion_html(sample)
 
         out.append(
             "<tr>"
@@ -4274,8 +5985,9 @@ def build_tb_rows():
             f"<td>{safe(species)}</td>"
             f"<td>{lineage}</td>"
             f"<td>{badge(category)}</td>"
-            f"<td>{safe(resistant_drugs)}</td>"
-            f"<td>{decision_html}<br><small>{safe(mtbc_reason)}</small></td>"
+            f"<td>{resistance_detail}</td>"
+            f"<td>{selected_html}</td>"
+            f"<td>{iqtree_html}</td>"
             "</tr>"
         )
 
@@ -4597,42 +6309,44 @@ def build_qc_rationale_surveillance_metadata_section():
     qc_body = []
 
     for r in qc_cleaned:
+        sample = r.get("sample") or r.get("sample_id") or ""
         selected = r.get("selected_for_phylogeny", r.get("included", ""))
-        included = r.get("included_in_tree", r.get("included", ""))
+        selected_reason = r.get("reason") or ""
 
-        selected_html = green_badge(selected) if clean(selected).upper() == "YES" else red_badge(selected)
-        included_html = green_badge(included) if clean(included).upper() == "YES" else red_badge(included)
+        selected_html = selected_for_mtbc_workflow_html(selected, selected_reason)
+        iqtree_html = iqtree_inclusion_html(sample)
 
         qc_body.append(
             "<tr>"
-            f"<td>{safe(r.get('sample'))}</td>"
+            f"<td>{safe(sample)}</td>"
             f"<td>{safe(r.get('mean_depth'))}</td>"
             f"<td>{safe(r.get('mtbc_percent'))}</td>"
             f"<td>{selected_html}</td>"
-            f"<td>{included_html}</td>"
-            f"<td>{safe(r.get('reason'))}</td>"
+            f"<td>{iqtree_html}</td>"
+            f"<td>{safe(selected_reason)}</td>"
             "</tr>"
         )
 
     metadata_body = []
 
     for r in metadata_cleaned:
-        included = r.get("included_in_tree", "")
-        included_html = green_badge(included) if clean(included).upper() == "YES" else red_badge(included)
-        resistance_profile = r.get("resistance_profile") or "Resistance not determined by TB-Profiler"
+        sample = r.get("sample") or r.get("sample_id") or ""
+        info = get_resistance_info(sample, r)
+        resistance_profile = info["resistance_profile"]
+        resistant_drugs = info["resistant_drugs"]
 
-        drug_res_detected = normalize_missing(r.get("drug_resistance_detected"), "Not determined")
+        iqtree_html = iqtree_inclusion_html(sample)
 
-        if drug_res_detected.upper() == "YES":
+        if is_drug_resistant_category(resistance_profile):
             drug_res_html = red_badge("YES")
-        elif drug_res_detected.upper() == "NO":
+        elif resistance_profile == "Sensitive":
             drug_res_html = green_badge("NO")
         else:
-            drug_res_html = neutral_badge(drug_res_detected)
+            drug_res_html = neutral_badge("Not determined")
 
         metadata_body.append(
             "<tr>"
-            f"<td>{safe(r.get('sample'))}</td>"
+            f"<td>{safe(sample)}</td>"
             f"<td>{safe(r.get('integrated_mtbc_status') or r.get('tbprofiler_species'))}</td>"
             f"<td>{safe(r.get('mtbc_support_source'))}</td>"
             f"<td>{safe(r.get('tbprofiler_lineage_status'))}</td>"
@@ -4642,9 +6356,9 @@ def build_qc_rationale_surveillance_metadata_section():
             f"<td>{safe(r.get('lineage_group'))}</td>"
             f"<td>{badge(resistance_profile)}</td>"
             f"<td>{drug_res_html}</td>"
-            f"<td>{safe(r.get('resistant_drugs'))}</td>"
+            f"<td>{safe(resistant_drugs)}</td>"
             f"<td>{safe(r.get('mean_depth'))}</td>"
-            f"<td>{included_html}</td>"
+            f"<td>{iqtree_html}</td>"
             "</tr>"
         )
 
@@ -4658,7 +6372,7 @@ def build_qc_rationale_surveillance_metadata_section():
 <div class="section">
 <h2>10. QC Filtering Rationale and Surveillance Metadata</h2>
 <div class="note">
-This section provides a transparent rationale for sample inclusion/exclusion and a surveillance-ready metadata table. The metadata TSV is exported as <code>tb_surveillance_metadata.tsv</code>, and the QC rationale is exported as <code>qc_filtering_rationale.tsv</code>.
+This section provides a transparent rationale for sample inclusion/exclusion and a surveillance-ready metadata table. Resistance profile, drug-resistance detected status, and resistant drugs are populated from the canonical <code>resistance_profile_summary.tsv</code> generated by TB-Profiler parsing, ensuring this table matches Section 3 and the phylogenetic tree labels.
 </div>
 
 <div class="controls">
@@ -4673,8 +6387,8 @@ This section provides a transparent rationale for sample inclusion/exclusion and
 <th class="sample" onclick="sortTable('qcRationaleTable',0)">Sample</th>
 <th class="status" onclick="sortTable('qcRationaleTable',1)">Mean depth</th>
 <th class="status" onclick="sortTable('qcRationaleTable',2)">MTBC %</th>
-<th class="status" onclick="sortTable('qcRationaleTable',3)">Selected for phylogeny</th>
-<th class="status" onclick="sortTable('qcRationaleTable',4)">Included in tree</th>
+<th class="status" onclick="sortTable('qcRationaleTable',3)">Selected for MTBC workflow</th>
+<th class="status" onclick="sortTable('qcRationaleTable',4)">Included in IQ-TREE</th>
 <th class="status" onclick="sortTable('qcRationaleTable',5)">Reason</th>
 </tr>
 </thead>
@@ -4699,7 +6413,7 @@ This section provides a transparent rationale for sample inclusion/exclusion and
 <th class="resistance" onclick="sortTable('surveillanceMetadataTable',9)">Drug Resistance Detected</th>
 <th class="mutations" onclick="sortTable('surveillanceMetadataTable',10)">Resistant Drugs</th>
 <th class="status" onclick="sortTable('surveillanceMetadataTable',11)">Mean Depth</th>
-<th class="status" onclick="sortTable('surveillanceMetadataTable',12)">Included in Tree</th>
+<th class="status" onclick="sortTable('surveillanceMetadataTable',12)">Included in IQ-TREE</th>
 </tr>
 </thead>
 <tbody>
@@ -4710,22 +6424,10 @@ This section provides a transparent rationale for sample inclusion/exclusion and
 """
 
 def build_tree_legend():
-    items = [
-        ("No resistance detected by TB-Profiler", RESISTANCE_COLORS["No resistance detected by TB-Profiler"]),
-        ("Resistance not determined by TB-Profiler", RESISTANCE_COLORS["Resistance not determined by TB-Profiler"]),
-        ("Monoresistance", RESISTANCE_COLORS["Monoresistance"]),
-        ("HR-TB", RESISTANCE_COLORS["HR-TB"]),
-        ("RR-TB", RESISTANCE_COLORS["RR-TB"]),
-        ("MDR", RESISTANCE_COLORS["MDR"]),
-        ("Pre-XDR", RESISTANCE_COLORS["Pre-XDR"]),
-        ("XDR", RESISTANCE_COLORS["XDR"]),
-        ("Other drug resistance", RESISTANCE_COLORS["Other drug resistance"]),
-        ("Unknown", RESISTANCE_COLORS["Unknown"]),
-    ]
-
     legend = ['<div class="legend">']
 
-    for label, color in items:
+    for label in RESISTANCE_ORDER:
+        color = RESISTANCE_COLORS[label]
         legend.append(f'<span><strong style="color:{color};">●</strong> {safe(label)}</span>')
 
     legend.append('<span><strong style="color:#b91c1c;">Bootstrap support (%)</strong></span>')
@@ -4745,6 +6447,115 @@ def build_iqtree_section():
 <summary>IQ-TREE report</summary>
 <pre>{safe(txt[:30000])}</pre>
 </details>
+"""
+
+def build_iqtree_exclusion_footnote():
+    cleaned = [
+        r for r in iqtree_excluded_rows
+        if clean(r.get("sample"))
+    ]
+
+    included_count = len([
+        r for r in iqtree_included_rows
+        if clean(r.get("sample"))
+    ])
+
+    status_line = f"<p><strong>IQ-TREE status:</strong> {safe(iqtree_status_text)}"
+
+    if included_count:
+        status_line += f" &nbsp; | &nbsp; <strong>Samples retained for tree:</strong> {included_count}"
+
+    status_line += "</p>"
+
+    if not cleaned:
+        return f"""
+<div class="tree-notes tree-notes-pass">
+<h4>Phylogenetic tree notes</h4>
+{status_line}
+<p>No samples were excluded by the IQ-TREE pre-filtering step. All samples that passed MTBC selection and core-alignment generation were eligible for phylogenetic inference.</p>
+</div>
+"""
+
+    notes = []
+
+    for r in cleaned:
+        sample = clean(r.get("sample"))
+        missing_fraction = clean(r.get("missing_fraction"))
+        reason = clean(r.get("reason"))
+        exclusion_note = clean(r.get("exclusion_note"))
+        threshold = clean(r.get("threshold"))
+
+        try:
+            missing_percent = f"{float(missing_fraction) * 100:.2f}%"
+        except Exception:
+            missing_percent = missing_fraction or "not reported"
+
+        try:
+            threshold_percent = f"{float(threshold) * 100:.0f}%" if threshold else "50%"
+        except Exception:
+            threshold_percent = threshold or "50%"
+
+        reason_low = reason.lower()
+
+        if exclusion_note:
+            note = exclusion_note
+        elif reason_low == "no_usable_acgt_bases":
+            note = (
+                f"{sample} was excluded from IQ-TREE because it had "
+                f"{missing_percent} missing/ambiguous/gap content in the "
+                f"core-SNP alignment and no usable ACGT bases."
+            )
+        elif reason_low.startswith("missing_fraction_ge_"):
+            if not threshold or threshold_percent == "50%":
+                threshold_raw = reason_low.replace("missing_fraction_ge_", "")
+                try:
+                    threshold_percent = f"{float(threshold_raw) * 100:.0f}%"
+                except Exception:
+                    threshold_percent = threshold_percent
+
+            note = (
+                f"{sample} was excluded from IQ-TREE because "
+                f"{missing_percent} of its core-SNP alignment was "
+                f"missing/ambiguous/gap content, exceeding the maximum allowed "
+                f"threshold of {threshold_percent}."
+            )
+        elif reason_low == "empty_sequence":
+            note = (
+                f"{sample} was excluded from IQ-TREE because its core-SNP "
+                f"alignment sequence was empty."
+            )
+        else:
+            note = (
+                f"{sample} was excluded from IQ-TREE because it did not meet "
+                f"the minimum alignment-quality requirements for phylogenetic inference."
+            )
+
+        if note.startswith(sample):
+            note_remainder = note[len(sample):].lstrip()
+            notes.append(f"<li><strong>{safe(sample)}</strong> {safe(note_remainder)}</li>")
+        else:
+            notes.append(f"<li>{safe(note)}</li>")
+
+    summary_details = ""
+
+    if iqtree_filtering_summary_text:
+        summary_details = f"""
+<details>
+<summary>View IQ-TREE alignment filtering summary</summary>
+<pre>{safe(iqtree_filtering_summary_text[:12000])}</pre>
+</details>
+"""
+
+    return f"""
+<div class="tree-notes">
+<h4>Phylogenetic tree notes</h4>
+{status_line}
+<p><strong>{len(cleaned)} sample(s)</strong> were excluded from IQ-TREE before phylogenetic inference because their core-SNP alignment sequence did not meet tree-building quality requirements. These samples remain part of the wider workflow and are excluded only from the phylogenetic tree.</p>
+<ul>
+{''.join(notes)}
+</ul>
+{summary_details}
+</div>
 """
 
 tree_exists = Path("final_report/mtbc_tree.png").exists()
@@ -4923,6 +6734,40 @@ th.status{{background:#087f5b;}}
   margin:12px 0;
   line-height:1.45;
 }}
+.tree-notes{{
+  margin-top:16px;
+  padding:14px 16px;
+  border-left:5px solid #f59e0b;
+  background:#fffbeb;
+  border-radius:12px;
+  line-height:1.5;
+}}
+.tree-notes h4{{
+  margin:0 0 8px 0;
+  color:#92400e;
+  font-size:16px;
+}}
+.tree-notes p{{
+  margin:8px 0;
+}}
+.tree-notes ul{{
+  margin:8px 0 0 20px;
+  padding:0;
+}}
+.tree-notes li{{
+  margin-bottom:8px;
+}}
+.tree-notes details{{
+  margin-top:10px;
+  background:#ffffff;
+}}
+.tree-notes-pass{{
+  border-left-color:#28A745;
+  background:#f0fdf4;
+}}
+.tree-notes-pass h4{{
+  color:#166534;
+}}
 .grid2{{
   display:grid;
   grid-template-columns:minmax(0,1fr);
@@ -5029,28 +6874,29 @@ pre{{
 <h2>3. TB-Profiler Resistance, Species, and Lineage Report</h2>
 
 <div class="note">
-<strong>Interpretation note:</strong> TB-Profiler is using WHO 2021+ definitions for classification of drug-resistance results.
-<strong>Key WHO 2021+ resistance definitions:</strong>
-<strong>Isoniazid-resistant, rifampicin-susceptible TB (HR-TB):</strong> resistant to isoniazid and not resistant to rifampicin.
-<strong>Rifampicin-resistant TB (RR-TB):</strong> resistant to rifampicin, with or without resistance to other drugs.
-<strong>Multidrug-resistant TB (MDR-TB):</strong> resistance to at least isoniazid and rifampicin.
-<strong>Pre-extensively drug-resistant TB (Pre-XDR-TB):</strong> MDR/RR-TB that is also resistant to any fluoroquinolone.
-<strong>Extensively drug-resistant TB (XDR-TB):</strong> MDR/RR-TB that is resistant to any fluoroquinolone and at least one additional Group A drug, bedaquiline or linezolid.
+<strong>Interpretation note:</strong> Resistance profile classifications in this section are populated from the canonical <code>resistance_profile_summary.tsv</code> generated during TB-Profiler parsing. The same source is also used for Surveillance Metadata, tree labels, resistance badges, resistant drug lists, and drug-resistant isolate counts.
+<br><br>
+<strong>Reporting distinction:</strong> <em>Selected for MTBC workflow</em> means the sample was retained by the MTBC support logic and remains part of the wider workflow. <em>Included in IQ-TREE</em> means the sample also passed core-SNP alignment quality filtering and was actually eligible for IQ-TREE phylogenetic inference. Samples can therefore be selected for the MTBC workflow but excluded from IQ-TREE only.
+<br><br>
+<strong>WHO 2021+ resistance definitions:</strong>
+<strong>Hr-TB:</strong> resistant to isoniazid and not resistant to rifampicin.
+<strong>RR-TB:</strong> resistant to rifampicin, with or without resistance to other drugs.
+<strong>MDR/RR-TB:</strong> rifampicin-resistant TB, with or without isoniazid resistance; MDR-TB is the subset resistant to at least isoniazid and rifampicin.
+<strong>Pre-XDR-TB:</strong> MDR/RR-TB that is also resistant to any fluoroquinolone.
+<strong>XDR-TB:</strong> MDR/RR-TB that is resistant to any fluoroquinolone and at least one additional Group A drug, bedaquiline or linezolid.
 </div>
 
 <div class="controls">
 <input id="tbSearch" onkeyup="filterTable('tbSearch','tbTable')" placeholder="Search TB-Profiler results...">
 <select onchange="filterResistance(this.value)">
 <option value="">All resistance profiles</option>
-<option value="No resistance detected by TB-Profiler">No resistance detected by TB-Profiler only</option>
-<option value="Resistance not determined by TB-Profiler">Resistance not determined by TB-Profiler only</option>
-<option value="Monoresistance">Monoresistance only</option>
-<option value="HR-TB">HR-TB only</option>
-<option value="RR-TB">RR-TB only</option>
-<option value="MDR">MDR only</option>
-<option value="Pre-XDR">Pre-XDR only</option>
-<option value="XDR">XDR only</option>
+<option value="Sensitive">Sensitive only</option>
+<option value="Hr-TB">Hr-TB only</option>
+<option value="MDR/RR-TB">MDR/RR-TB only</option>
+<option value="Pre-XDR-TB">Pre-XDR-TB only</option>
+<option value="XDR-TB">XDR-TB only</option>
 <option value="Other drug resistance">Other drug resistance only</option>
+<option value="Resistance not determined by TB-Profiler">Resistance not determined only</option>
 <option value="Unknown">Unknown only</option>
 </select>
 <button onclick="downloadCSV('tbTable','tbprofiler_summary.csv')">Download TB-Profiler CSV</button>
@@ -5064,7 +6910,8 @@ pre{{
 <th class="lineage" onclick="sortTable('tbTable',2)">Lineage</th>
 <th class="resistance" onclick="sortTable('tbTable',3)">Resistance profile</th>
 <th class="mutations" onclick="sortTable('tbTable',4)">Resistant drugs / key mutations</th>
-<th class="status" onclick="sortTable('tbTable',5)">MTBC decision</th>
+<th class="status" onclick="sortTable('tbTable',5)">Selected for MTBC workflow</th>
+<th class="status" onclick="sortTable('tbTable',6)">Included in IQ-TREE</th>
 </tr>
 </thead>
 <tbody>
@@ -5089,11 +6936,14 @@ pre{{
 <div class="tree-panel">
 {tree_html}
 {build_tree_legend()}
+{build_iqtree_exclusion_footnote()}
 </div>
 <div class="details">
 <h3>Tree construction summary</h3>
-<p><strong>Included:</strong> {mtbc_retained} MTBC isolate(s) retained for phylogenomic interpretation.</p>
-<p><strong>Excluded:</strong> {non_mtbc} non-MTBC or low-confidence isolate(s).</p>
+<p><strong>Selected for MTBC workflow:</strong> {mtbc_retained} MTBC isolate(s) retained in the wider workflow.</p>
+<p><strong>Included in IQ-TREE:</strong> {iqtree_included_count} non-reference MTBC isolate(s) retained after core-SNP alignment quality filtering.</p>
+<p><strong>Excluded from IQ-TREE only:</strong> {iqtree_excluded_count} sample(s) excluded from phylogenetic inference because of alignment-quality issues.</p>
+<p><strong>Excluded from MTBC workflow:</strong> {non_mtbc} non-MTBC or low-confidence isolate(s).</p>
 <p><strong>Core alignment:</strong> Snippy-core alignment.</p>
 <p><strong>Recombination:</strong> Optional Gubbins-filtered alignment when enabled.</p>
 <p><strong>Tree:</strong> IQ-TREE2 maximum-likelihood phylogeny.</p>
@@ -5107,9 +6957,9 @@ pre{{
 
 <div class="section">
 <h2>11. Pipeline Provenance and Software Versions</h2>
-<p>The report documents all samples through QC, species typing, TB-Profiler analysis, mutation-level resistance evidence, lineage distribution, SNP distance clustering, SNP heatmap visualization, surveillance metadata, and MTBC-only phylogenomic reconstruction. Samples not classified as MTBC are excluded from the tree but retained in the workflow record for transparency.</p>
+<p>The report documents all samples through QC, species typing, TB-Profiler analysis, mutation-level resistance evidence, lineage distribution, SNP distance clustering, SNP heatmap visualization, surveillance metadata, and MTBC-only phylogenomic reconstruction. Samples not classified as MTBC are excluded from the tree but retained in the workflow record for transparency. Samples with excessive missing, ambiguous, or gap-only content in the core-SNP alignment may also be excluded from IQ-TREE phylogenetic inference and are listed under the tree footnotes.</p>
 <div class="note">
-<strong>Interpretation:</strong> use close clustering together with bootstrap support, lineage, drug-resistance profile, mutation-level resistance evidence, lineage distribution, surveillance metadata, and SNP distances before making transmission inferences.
+<strong>Interpretation:</strong> use close clustering together with bootstrap support, lineage, drug-resistance profile, mutation-level resistance evidence, lineage distribution, surveillance metadata, sample-exclusion notes, and SNP distances before making transmission inferences.
 </div>
 <table>
 <thead>
@@ -5121,12 +6971,14 @@ pre{{
 <tbody>
 <tr><td>Species typing</td><td>Kraken2 + Bracken using <code>gmboowa/mycobacterium-kraken2-bracken:2026.05</code></td></tr>
 <tr><td>TB resistance and lineage</td><td>TB-Profiler Docker image provided by workflow input</td></tr>
+<tr><td>Canonical resistance profile</td><td><code>resistance_profile_summary.tsv</code> used for Section 3, Surveillance Metadata, tree labels, badges, resistant drugs, and drug-resistant isolate count</td></tr>
 <tr><td>Mutation-level resistance evidence</td><td>Parsed from TB-Profiler JSON outputs and summarized by sample, drug or evidence source, gene, mutation/change, confidence, and evidence</td></tr>
 <tr><td>Lineage distribution</td><td>Lineage counts and barplot generated from TB-Profiler lineage fields where resolved</td></tr>
 <tr><td>Pairwise SNP distance and clustering</td><td>Pairwise SNP distances calculated from the MTBC core genome alignment after excluding reference/non-sample sequences and interpreted using configured SNP thresholds</td></tr>
 <tr><td>SNP distance heatmap</td><td>SVG heatmap generated from the pairwise SNP distance matrix after reference filtering</td></tr>
 <tr><td>Surveillance metadata</td><td>Downloadable metadata and QC filtering rationale TSV files generated for transparent surveillance reporting</td></tr>
 <tr><td>Core-SNP phylogenomics</td><td>Snippy-core, optional Gubbins filtering, IQ-TREE2, and ETE3 tree rendering</td></tr>
+<tr><td>IQ-TREE problematic-sample filtering</td><td>Samples with excessive missing, ambiguous, or gap-only sequence content in the core-SNP alignment are excluded from IQ-TREE and reported in <code>excluded_from_iqtree.tsv</code></td></tr>
 <tr><td>Report generated</td><td>{safe(run_started_utc)}</td></tr>
 <tr><td>Run stamp</td><td>{safe(run_stamp)}</td></tr>
 </tbody>
@@ -5236,6 +7088,11 @@ EOF_SVG
 
     [ -f final_report/tb_surveillance_metadata.tsv ] || echo -e "sample\tintegrated_mtbc_status\tmtbc_support_source\ttbprofiler_lineage_status\tkraken_species\ttbprofiler_main_lineage\ttbprofiler_sub_lineage\tlineage_group\tresistance_profile\tdrug_resistance_detected\tresistant_drugs\tmean_depth\tincluded_in_tree" > final_report/tb_surveillance_metadata.tsv
     [ -f final_report/qc_filtering_rationale.tsv ] || echo -e "sample\tmean_depth\tmtbc_percent\tselected_for_phylogeny\tincluded_in_tree\treason" > final_report/qc_filtering_rationale.tsv
+    [ -f final_report/resistance_profile_summary.tsv ] || echo -e "sample_id\tresistance_profile\tresistant_drugs\tresistance_mutations\tkey_mutations\tstatus" > final_report/resistance_profile_summary.tsv
+    [ -f final_report/excluded_from_iqtree.tsv ] || echo -e "sample\talignment_length\tacgt_count\tmissing_count\tmissing_fraction\tthreshold\treason\texclusion_note" > final_report/excluded_from_iqtree.tsv
+    [ -f final_report/included_in_iqtree.tsv ] || echo -e "sample\talignment_length\tacgt_count\tmissing_count\tmissing_fraction" > final_report/included_in_iqtree.tsv
+    [ -f final_report/alignment_filtering_summary.txt ] || echo "IQ-TREE alignment filtering summary was not provided." > final_report/alignment_filtering_summary.txt
+    [ -f final_report/iqtree_status.txt ] || echo "unknown_status" > final_report/iqtree_status.txt
   >>>
 
   runtime {
@@ -5251,5 +7108,10 @@ EOF_SVG
     File? merged_snp_distance_heatmap_svg = "final_report/snp_distance_heatmap.svg"
     File? merged_surveillance_metadata_tsv = "final_report/tb_surveillance_metadata.tsv"
     File? merged_qc_filtering_rationale_tsv = "final_report/qc_filtering_rationale.tsv"
+    File? merged_resistance_profile_summary_tsv = "final_report/resistance_profile_summary.tsv"
+    File? merged_iqtree_excluded_samples_tsv = "final_report/excluded_from_iqtree.tsv"
+    File? merged_iqtree_included_samples_tsv = "final_report/included_in_iqtree.tsv"
+    File? merged_iqtree_filtering_summary_txt = "final_report/alignment_filtering_summary.txt"
+    File? merged_iqtree_status_txt = "final_report/iqtree_status.txt"
   }
 }
