@@ -28,6 +28,23 @@ QC aggregation with MultiQC
         ⬇
 Mycobacteria species typing with Kraken2 + Bracken
         ⬇
+MTBC / non-MTBC Mycobacteria routing
+        ├───────────────────────────────────────────────┐
+        │                                               │
+        │                                               ⬇
+        │                         Non-MTBC Mycobacteria / NTM speciation summary
+        │                                    - Most probable NTM species
+        │                                    - Species-level evidence
+        │                                    - MTBC support status
+        │                                    - Exclusion from MTBC-specific analysis
+        │                                               ⬇
+        │                                 Non-MTBC Mycobacteria Species Summary
+        │                                               ⬇
+        │                                     Integrated HTML report
+        │
+        ⬇
+MTBC-supported samples only
+        ⬇
 TB-Profiler species, lineage & AMR profiling
         ⬇
 MTBC-only sample filtering
