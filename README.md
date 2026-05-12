@@ -408,7 +408,7 @@ integrated_report.html
 ## GitHub Pages report site
 
 ```text
-https://gmboowa.github.io/rMAP_TB/
+https://gmboowa.github.io/rMAP-TB/
 ```
 
 
