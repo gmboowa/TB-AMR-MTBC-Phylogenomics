@@ -1,0 +1,10 @@
+Original sequences: 12
+Included sequences: 12
+Excluded sequences: 0
+Included non-reference samples: 11
+Alignment length: 33921
+Maximum allowed missing fraction: 0.5
+
+Excluded samples from IQ-TREE only: none
+
+Note: Excluded samples are not removed from the wider workflow. They are excluded only from IQ-TREE phylogenetic inference because their core-SNP alignment sequence did not meet the minimum quality requirements for tree reconstruction.

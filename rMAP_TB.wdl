@@ -82,14 +82,24 @@ workflow rMAP_TB {
         cpu = cpu_8,
         memory_gb = max_memory_gb
     }
-  }
 
-  # 4. TB-Profiler Resistance, Species, Lineage, and Mutation-Level Evidence Report.
-  # TB-Profiler is intentionally chained after Species Typing when enabled.
-  if (do_tb_profiler) {
-    call TB_PROFILER_AND_MTBC_FILTER {
+    call MYCOBACTERIA_SAMPLE_ROUTER {
       input:
         input_reads = analysis_reads,
+        species_typing_tsv = SPECIES_TYPING.species_typing_tsv
+    }
+  }
+
+  Array[File] mtbc_reads = select_first([MYCOBACTERIA_SAMPLE_ROUTER.mtbc_reads, []])
+  Int mtbc_sample_count_from_kraken = select_first([MYCOBACTERIA_SAMPLE_ROUTER.mtbc_sample_count, 0])
+
+  # 4. TB-Profiler Resistance, Species, Lineage, and Mutation-Level Evidence Report.
+  # TB-Profiler is intentionally chained after Species Typing and receives only Kraken2/Bracken-supported MTBC reads.
+  # If the dataset contains only non-MTBC/NTM samples, TB-Profiler is skipped and the final report summarizes NTM speciation.
+  if (do_tb_profiler && size(mtbc_reads) >= 2 && mtbc_sample_count_from_kraken > 0) {
+    call TB_PROFILER_AND_MTBC_FILTER {
+      input:
+        input_reads = mtbc_reads,
         qc_dependency = SPECIES_TYPING.species_typing_html,
         species_typing_tsv = SPECIES_TYPING.species_typing_tsv,
         docker_image = tbprofiler_docker,
@@ -97,8 +107,6 @@ workflow rMAP_TB {
         memory_gb = max_memory_gb
     }
   }
-
-  Array[File] mtbc_reads = select_first([TB_PROFILER_AND_MTBC_FILTER.mtbc_reads, []])
 
   # 5. MTBC-only Snippy/core-SNP analysis.
   # If fewer than min_mtbc_samples_for_tree paired MTBC samples are available, this branch is skipped.
@@ -216,6 +224,10 @@ workflow rMAP_TB {
 
     species_typing_html = SPECIES_TYPING.species_typing_html,
     species_typing_tsv = SPECIES_TYPING.species_typing_tsv,
+    ntm_species_summary_html = MYCOBACTERIA_SAMPLE_ROUTER.ntm_species_summary_html,
+    ntm_species_summary_tsv = MYCOBACTERIA_SAMPLE_ROUTER.ntm_species_summary_tsv,
+    mycobacteria_routing_summary_tsv = MYCOBACTERIA_SAMPLE_ROUTER.mycobacteria_routing_summary_tsv,
+    mycobacteria_routing_status = MYCOBACTERIA_SAMPLE_ROUTER.routing_status_txt,
 
     qc_summary_html = MULTIQC.multiqc_report,
     trimming_report_html = TRIMMING.trimming_report,
@@ -264,6 +276,14 @@ workflow rMAP_TB {
     File? species_typing_tsv = SPECIES_TYPING.species_typing_tsv
     Array[File]? species_typing_kraken_reports = SPECIES_TYPING.kraken_reports
     Array[File]? species_typing_kraken_outputs = SPECIES_TYPING.kraken_outputs
+
+    File? mycobacteria_routing_summary_tsv = MYCOBACTERIA_SAMPLE_ROUTER.mycobacteria_routing_summary_tsv
+    File? ntm_species_summary_tsv = MYCOBACTERIA_SAMPLE_ROUTER.ntm_species_summary_tsv
+    File? ntm_species_summary_html = MYCOBACTERIA_SAMPLE_ROUTER.ntm_species_summary_html
+    File? mtbc_species_summary_tsv = MYCOBACTERIA_SAMPLE_ROUTER.mtbc_species_summary_tsv
+    File? non_mtbc_species_summary_tsv = MYCOBACTERIA_SAMPLE_ROUTER.non_mtbc_species_summary_tsv
+    File? mycobacteria_routing_status = MYCOBACTERIA_SAMPLE_ROUTER.routing_status_txt
+    Array[File]? kraken_selected_mtbc_reads = MYCOBACTERIA_SAMPLE_ROUTER.mtbc_reads
 
     Array[File]? tbprofiler_json = TB_PROFILER_AND_MTBC_FILTER.json_reports
     Array[File]? tbprofiler_txt = TB_PROFILER_AND_MTBC_FILTER.txt_reports
@@ -803,15 +823,58 @@ task SPECIES_TYPING {
 
       final_call_lc="$(echo "$final_call" | tr '[:upper:]' '[:lower:]')"
 
-      if [ "$mtbc_reads" != "0" ] && [ "$mtbc_reads" != "0.00" ]; then
+      #########################################################################
+      # Conservative MTBC routing rule.
+      #
+      # Do NOT route a sample into the MTBC workflow merely because a tiny
+      # number of reads map to the MTBC complex node. Low-level MTBC signal can
+      # occur as cross-assignment/background in a Mycobacterium-only Kraken DB.
+      #
+      # A sample is routed as MTBC only when either:
+      #   1. the top species-level call is clearly M. tuberculosis / MTBC; or
+      #   2. the MTBC complex node has strong support: >=10% and >=1,000 reads.
+      #
+      # This prevents samples such as M. ulcerans / M. adipatum with <1% MTBC
+      # support from being sent to TB-Profiler, Snippy, IQ-TREE, and tree plots.
+      #########################################################################
+
+      mtbc_percent_float="$(python3 - <<PYMTBC
+try:
+    print(float("${mtbc_percent}"))
+except Exception:
+    print(0.0)
+PYMTBC
+)"
+
+      mtbc_reads_int="$(python3 - <<PYREADS
+try:
+    print(int(float("${mtbc_reads}")))
+except Exception:
+    print(0)
+PYREADS
+)"
+
+      top_call_is_mtbc="NO"
+      if echo "$final_call_lc" | grep -Eq "mycobacterium tuberculosis|m\. tuberculosis|mycobacterium tuberculosis complex|mtbc|tuberculosis complex"; then
+        top_call_is_mtbc="YES"
+      fi
+
+      strong_mtbc_node_support="$(python3 - <<PYSTRONG
+pct = float("${mtbc_percent_float}")
+reads = int("${mtbc_reads_int}")
+print("YES" if (pct >= 10.0 and reads >= 1000) else "NO")
+PYSTRONG
+)"
+
+      if [ "$top_call_is_mtbc" = "YES" ]; then
         mtbc_supported="YES"
-        selection_basis="Selected for phylogeny because Kraken2 detected reads assigned to the MTBC complex node, NCBI taxid 77643"
-      elif echo "$final_call_lc" | grep -Eq "mycobacterium tuberculosis|m\. tuberculosis|mycobacterium tuberculosis complex|mtbc|tuberculosis complex"; then
+        selection_basis="Selected for MTBC workflow because the top Kraken2 species-level call supports MTBC"
+      elif [ "$strong_mtbc_node_support" = "YES" ]; then
         mtbc_supported="YES"
-        selection_basis="Selected for phylogeny because the top Kraken2 species-level call supports MTBC"
+        selection_basis="Selected for MTBC workflow because Kraken2 detected strong MTBC-complex support: ${mtbc_reads} reads; ${mtbc_percent}%"
       else
         mtbc_supported="NO"
-        selection_basis="Not selected for phylogeny because Kraken2/Bracken species typing did not support MTBC"
+        selection_basis="Not selected for MTBC workflow because Kraken2/Bracken species typing did not provide strong MTBC support; low-level MTBC reads alone are treated as background/cross-assignment"
       fi
 
       if [ -z "$top_species_line" ]; then
@@ -956,6 +1019,230 @@ PY
     memory: "~{memory_gb} GB"
   }
 }
+task MYCOBACTERIA_SAMPLE_ROUTER {
+  input {
+    Array[File]+ input_reads
+    File species_typing_tsv
+    String docker_image = "python:3.11-slim"
+    Int cpu = 1
+    Int memory_gb = 2
+  }
+
+  command <<<
+    set -euo pipefail
+
+    mkdir -p routed_reads/mtbc routing ntm_species
+
+    python3 - <<'PY'
+import csv
+import html
+import re
+import shutil
+from pathlib import Path
+
+species_tsv = Path("~{species_typing_tsv}")
+input_files = [Path(x) for x in """~{sep='\n' input_reads}""".splitlines() if x.strip()]
+
+outdir = Path("routing")
+outdir.mkdir(exist_ok=True)
+ntm_dir = Path("ntm_species")
+ntm_dir.mkdir(exist_ok=True)
+mtbc_dir = Path("routed_reads/mtbc")
+mtbc_dir.mkdir(parents=True, exist_ok=True)
+
+def sample_from_name(path):
+    name = Path(path).name
+    patterns = [
+        r"_R1_paired\.fastq\.gz$", r"_R2_paired\.fastq\.gz$",
+        r"_R1_paired\.fq\.gz$", r"_R2_paired\.fq\.gz$",
+        r"_R1\.fastq\.gz$", r"_R2\.fastq\.gz$",
+        r"_R1\.fq\.gz$", r"_R2\.fq\.gz$",
+        r"_1\.fastq\.gz$", r"_2\.fastq\.gz$",
+        r"_1\.fq\.gz$", r"_2\.fq\.gz$",
+        r"\.fastq\.gz$", r"\.fq\.gz$", r"\.fastq$", r"\.fq$"
+    ]
+    for pat in patterns:
+        name = re.sub(pat, "", name)
+    return name
+
+pairs = {}
+for i in range(0, len(input_files), 2):
+    r1 = input_files[i]
+    r2 = input_files[i + 1] if i + 1 < len(input_files) else None
+    sample = sample_from_name(r1)
+    if r2 is not None:
+        pairs[sample] = (r1, r2)
+
+rows = []
+if species_tsv.exists() and species_tsv.stat().st_size > 0:
+    with species_tsv.open(newline="") as handle:
+        rows = list(csv.DictReader(handle, delimiter="	"))
+
+def clean(v):
+    return str(v or "").strip()
+
+def is_mtbc_supported(row):
+    return clean(row.get("MTBC_Supported") or row.get("mtbc_supported")).upper() == "YES"
+
+def classify(row):
+    species = clean(row.get("Species_Identified") or row.get("Species identified") or row.get("species") or row.get("Species"))
+    evidence = clean(row.get("Evidence") or row.get("evidence"))
+    text = f"{species} {evidence}".lower()
+
+    if is_mtbc_supported(row):
+        return "MTBC"
+    if not species or species.lower() in ["no species-level mycobacterium call", "no species-level call", "unknown", "na", "n/a"]:
+        return "Unresolved Mycobacterium"
+    if "mycobacterium" in text:
+        return "NTM"
+    return "Non-Mycobacterium or low-confidence"
+
+def decision_for(classification):
+    if classification == "MTBC":
+        return "Retained for TB-Profiler, MTBC AMR interpretation, and MTBC-specific phylogenomics"
+    if classification == "NTM":
+        return "Reported as non-MTBC Mycobacterium and excluded from TB-Profiler and MTBC-specific phylogenomics"
+    if classification == "Unresolved Mycobacterium":
+        return "Reported as unresolved Mycobacterium and excluded from MTBC-specific downstream analyses"
+    return "Reported and excluded from MTBC-specific downstream analyses"
+
+routing_rows = []
+mtbc_count = ntm_count = unresolved_count = non_myco_count = 0
+
+for row in rows:
+    sample = clean(row.get("Sample_ID") or row.get("sample") or row.get("sample_id") or row.get("Sample ID"))
+    species = clean(row.get("Species_Identified") or row.get("Species identified") or row.get("species") or row.get("Species")) or "Not resolved"
+    evidence = clean(row.get("Evidence") or row.get("evidence")) or "No supporting evidence reported"
+    mtbc_supported = clean(row.get("MTBC_Supported") or row.get("mtbc_supported")) or "NO"
+    mtbc_reads = clean(row.get("MTBC_Reads") or row.get("mtbc_reads")) or "0"
+    mtbc_percent = clean(row.get("MTBC_Percent") or row.get("mtbc_percent")) or "0.00"
+    selection_basis = clean(row.get("Selection_Basis") or row.get("selection_basis"))
+
+    classification = classify(row)
+    decision = decision_for(classification)
+
+    if classification == "MTBC":
+        mtbc_count += 1
+        if sample in pairs:
+            r1, r2 = pairs[sample]
+            shutil.copyfile(r1, mtbc_dir / f"{sample}_R1.fastq.gz")
+            shutil.copyfile(r2, mtbc_dir / f"{sample}_R2.fastq.gz")
+    elif classification == "NTM":
+        ntm_count += 1
+    elif classification == "Unresolved Mycobacterium":
+        unresolved_count += 1
+    else:
+        non_myco_count += 1
+
+    routing_rows.append({
+        "Sample_ID": sample,
+        "Most_Probable_Mycobacterium_Species": species,
+        "Mycobacteria_Category": classification,
+        "MTBC_Supported": mtbc_supported,
+        "MTBC_Reads": mtbc_reads,
+        "MTBC_Percent": mtbc_percent,
+        "Evidence": evidence,
+        "Workflow_Decision": decision,
+        "Selection_Basis": selection_basis
+    })
+
+fields = [
+    "Sample_ID", "Most_Probable_Mycobacterium_Species", "Mycobacteria_Category",
+    "MTBC_Supported", "MTBC_Reads", "MTBC_Percent", "Evidence",
+    "Workflow_Decision", "Selection_Basis"
+]
+
+def write_rows(path, selected):
+    with Path(path).open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields, delimiter="	")
+        writer.writeheader()
+        writer.writerows(selected)
+
+write_rows(outdir / "mycobacteria_routing_summary.tsv", routing_rows)
+write_rows(ntm_dir / "ntm_species_summary.tsv", [r for r in routing_rows if r["Mycobacteria_Category"] == "NTM"])
+write_rows(outdir / "mtbc_species_summary.tsv", [r for r in routing_rows if r["Mycobacteria_Category"] == "MTBC"])
+write_rows(outdir / "non_mtbc_species_summary.tsv", [r for r in routing_rows if r["Mycobacteria_Category"] != "MTBC"])
+
+has_mtbc = mtbc_count > 0
+has_ntm = ntm_count > 0
+all_ntm = mtbc_count == 0 and ntm_count > 0
+
+(outdir / "mtbc_sample_count.txt").write_text(str(mtbc_count) + "\n")
+(outdir / "ntm_sample_count.txt").write_text(str(ntm_count) + "\n")
+(outdir / "unresolved_mycobacterium_count.txt").write_text(str(unresolved_count) + "\n")
+(outdir / "non_mycobacterium_count.txt").write_text(str(non_myco_count) + "\n")
+(outdir / "has_mtbc.txt").write_text(("true" if has_mtbc else "false") + "\n")
+(outdir / "has_ntm.txt").write_text(("true" if has_ntm else "false") + "\n")
+(outdir / "all_ntm.txt").write_text(("true" if all_ntm else "false") + "\n")
+
+if all_ntm:
+    status = "All classified Mycobacterium samples were non-MTBC/NTM. TB-Profiler and MTBC-specific phylogenomics should be skipped."
+elif has_mtbc and has_ntm:
+    status = "Mixed MTBC and NTM dataset. MTBC-supported samples are routed forward; NTM samples are reported and excluded from MTBC-specific analyses."
+elif has_mtbc:
+    status = "MTBC-supported dataset. MTBC samples are routed forward for TB-Profiler and MTBC-specific analyses."
+else:
+    status = "No MTBC-supported samples were detected. MTBC-specific downstream analyses should be skipped."
+
+(outdir / "routing_status.txt").write_text(status + "\n")
+
+body = []
+for r in routing_rows:
+    if r["Mycobacteria_Category"] != "MTBC":
+        body.append(
+            "<tr>"
+            f"<td>{html.escape(r['Sample_ID'])}</td>"
+            f"<td><em>{html.escape(r['Most_Probable_Mycobacterium_Species'])}</em></td>"
+            f"<td>{html.escape(r['Mycobacteria_Category'])}</td>"
+            f"<td>{html.escape(r['MTBC_Reads'])}</td>"
+            f"<td>{html.escape(r['MTBC_Percent'])}</td>"
+            f"<td>{html.escape(r['Evidence'])}</td>"
+            f"<td>{html.escape(r['Workflow_Decision'])}</td>"
+            "</tr>"
+        )
+if not body:
+    body.append("<tr><td colspan='7'>No non-MTBC Mycobacterium or NTM samples were detected by Kraken2/Bracken.</td></tr>")
+
+html_text = f"""<section class="card">
+<h2>Non-MTBC Mycobacteria Species Summary</h2>
+<p><strong>Routing status:</strong> {html.escape(status)}</p>
+<p>Kraken2/Bracken species typing was used as the first routing layer. MTBC-supported samples are retained for TB-Profiler and MTBC-specific phylogenomics. Non-MTBC Mycobacterium samples are reported here and excluded from MTBC-specific downstream analyses.</p>
+<table>
+<thead><tr><th>Sample ID</th><th>Most probable Mycobacterium species</th><th>Category</th><th>MTBC reads</th><th>MTBC percent</th><th>Evidence</th><th>Workflow decision</th></tr></thead>
+<tbody>{''.join(body)}</tbody>
+</table>
+</section>
+"""
+(ntm_dir / "ntm_species_summary.html").write_text(html_text)
+PY
+  >>>
+
+  runtime {
+    docker: docker_image
+    cpu: cpu
+    memory: "~{memory_gb} GB"
+    disks: "local-disk 20 HDD"
+    timeout: "6 hours"
+  }
+
+  output {
+    Array[File] mtbc_reads = glob("routed_reads/mtbc/*.fastq.gz")
+    File mycobacteria_routing_summary_tsv = "routing/mycobacteria_routing_summary.tsv"
+    File ntm_species_summary_tsv = "ntm_species/ntm_species_summary.tsv"
+    File ntm_species_summary_html = "ntm_species/ntm_species_summary.html"
+    File mtbc_species_summary_tsv = "routing/mtbc_species_summary.tsv"
+    File non_mtbc_species_summary_tsv = "routing/non_mtbc_species_summary.tsv"
+    File routing_status_txt = "routing/routing_status.txt"
+    Int mtbc_sample_count = read_int("routing/mtbc_sample_count.txt")
+    Int ntm_sample_count = read_int("routing/ntm_sample_count.txt")
+    Int unresolved_mycobacterium_count = read_int("routing/unresolved_mycobacterium_count.txt")
+    Int non_mycobacterium_count = read_int("routing/non_mycobacterium_count.txt")
+    Boolean has_mtbc = read_boolean("routing/has_mtbc.txt")
+    Boolean has_ntm = read_boolean("routing/has_ntm.txt")
+    Boolean all_ntm = read_boolean("routing/all_ntm.txt")
+  }
+}
+
 task TB_PROFILER_AND_MTBC_FILTER {
   input {
     Array[File]+ input_reads
@@ -969,6 +1256,16 @@ task TB_PROFILER_AND_MTBC_FILTER {
   command <<<
     set -uo pipefail
     mkdir -p tbprofiler_results mtbc_reads logs mutation_evidence
+
+    # Cromwell requires declared output files to exist at task completion.
+    # Create safe placeholders up front; successful report-rendering steps overwrite them later.
+    cat > tbprofiler_combined_report.html <<'EOF_TBPROF_PLACEHOLDER'
+<!doctype html><html><head><meta charset="utf-8"><title>TB-Profiler report</title></head><body><h1>TB-Profiler report</h1><p>TB-Profiler report generation started, but no final rendered table was produced.</p></body></html>
+EOF_TBPROF_PLACEHOLDER
+
+    cat > mutation_evidence/tbprofiler_mutation_evidence.html <<'EOF_MUT_PLACEHOLDER'
+<!doctype html><html><head><meta charset="utf-8"><title>TB-Profiler mutation evidence</title></head><body><h1>Resistance Mutation Evidence Summary</h1><p>No rendered mutation-evidence table was produced.</p></body></html>
+EOF_MUT_PLACEHOLDER
 
     species_tsv="~{if defined(species_typing_tsv) then species_typing_tsv else ""}"
 
@@ -1438,13 +1735,14 @@ def classify_who_2021_tb_resistance(resistant_drugs, tbprofiler_drtype):
 def get_kraken_support(sample, species_tsv):
     kraken_species = ""
     kraken_evidence = ""
+    supports_mtbc = False
 
     normalized_sample = normalize_sample_id(sample)
 
     if species_tsv and os.path.exists(species_tsv):
         try:
             with open(species_tsv) as sfh:
-                reader = csv.DictReader(sfh, delimiter="\t")
+                reader = csv.DictReader(sfh, delimiter="	")
                 for row in reader:
                     sid = (
                         row.get("Sample_ID") or
@@ -1468,20 +1766,39 @@ def get_kraken_support(sample, species_tsv):
                             row.get("Kraken2_Bracken_Evidence") or
                             ""
                         )
+
+                        # Use the explicit router field first. Do not infer MTBC
+                        # support from the word "MTBC" in the evidence sentence,
+                        # because every row reports an MTBC-read count.
+                        explicit = str(row.get("MTBC_Supported") or row.get("mtbc_supported") or "").strip().upper()
+                        if explicit in ["YES", "TRUE", "1"]:
+                            supports_mtbc = True
+                        elif explicit in ["NO", "FALSE", "0"]:
+                            supports_mtbc = False
+                        else:
+                            # Conservative fallback for legacy species TSVs.
+                            species_lc = kraken_species.lower()
+                            top_call_is_mtbc = any(t in species_lc for t in [
+                                "mycobacterium tuberculosis",
+                                "m. tuberculosis",
+                                "mycobacterium tuberculosis complex",
+                                "mtbc",
+                                "tuberculosis complex"
+                            ])
+                            try:
+                                mtbc_pct = float(row.get("MTBC_Percent") or row.get("mtbc_percent") or 0)
+                            except Exception:
+                                mtbc_pct = 0.0
+                            try:
+                                mtbc_reads = int(float(row.get("MTBC_Reads") or row.get("mtbc_reads") or 0))
+                            except Exception:
+                                mtbc_reads = 0
+                            supports_mtbc = bool(top_call_is_mtbc or (mtbc_pct >= 10.0 and mtbc_reads >= 1000))
                         break
         except Exception:
             kraken_species = ""
             kraken_evidence = ""
-
-    kraken_text = " ".join([kraken_species, kraken_evidence]).lower()
-
-    supports_mtbc = any(t in kraken_text for t in [
-        "mycobacterium tuberculosis",
-        "m. tuberculosis",
-        "mycobacterium tuberculosis complex",
-        "mtbc",
-        "tuberculosis complex"
-    ])
+            supports_mtbc = False
 
     return kraken_species, kraken_evidence, supports_mtbc
 
@@ -1920,6 +2237,26 @@ out.append("</tbody></table></div></body></html>")
 open("tbprofiler_combined_report.html", "w").write("\n".join(out))
 PYHTML
 
+    if [ ! -s tbprofiler_combined_report.html ]; then
+      echo "WARNING: tbprofiler_combined_report.html was not produced; writing fallback report." >> logs/tbprofiler.command.log
+      python3 - <<'PYHTML_FALLBACK' || true
+import html, pathlib
+summary = pathlib.Path("tbprofiler_summary.tsv")
+body = ""
+if summary.exists():
+    body = "<h2>Raw TB-Profiler summary TSV</h2><pre>" + html.escape(summary.read_text()) + "</pre>"
+else:
+    body = "<p>tbprofiler_summary.tsv was not found.</p>"
+pathlib.Path("tbprofiler_combined_report.html").write_text(
+    "<!doctype html><html><head><meta charset='utf-8'><title>TB-Profiler MTBC AMR report</title>"
+    "<style>body{font-family:Arial,Helvetica,sans-serif;margin:24px}pre{white-space:pre-wrap;background:#f8fafc;border:1px solid #e2e8f0;padding:12px}</style>"
+    "</head><body><h1>TB-Profiler drug-resistance, species and lineage report</h1>"
+    "<p><strong>Note:</strong> The styled HTML renderer did not complete, so this fallback report preserves the raw summary table for Cromwell output collection.</p>"
+    + body + "</body></html>"
+)
+PYHTML_FALLBACK
+    fi
+
     python3 - <<'PYMUTHTML'
 import csv, html
 
@@ -1977,6 +2314,26 @@ out.append("</tbody></table></div></body></html>")
 
 open("mutation_evidence/tbprofiler_mutation_evidence.html", "w").write("\n".join(out))
 PYMUTHTML
+
+    if [ ! -s mutation_evidence/tbprofiler_mutation_evidence.html ]; then
+      echo "WARNING: tbprofiler_mutation_evidence.html was not produced; writing fallback mutation-evidence report." >> logs/tbprofiler.command.log
+      python3 - <<'PYMUTHTML_FALLBACK' || true
+import html, pathlib
+tsv = pathlib.Path("mutation_evidence/tbprofiler_mutation_evidence.tsv")
+body = ""
+if tsv.exists():
+    body = "<h2>Raw mutation evidence TSV</h2><pre>" + html.escape(tsv.read_text()) + "</pre>"
+else:
+    body = "<p>tbprofiler_mutation_evidence.tsv was not found.</p>"
+pathlib.Path("mutation_evidence/tbprofiler_mutation_evidence.html").write_text(
+    "<!doctype html><html><head><meta charset='utf-8'><title>TB-Profiler mutation evidence</title>"
+    "<style>body{font-family:Arial,Helvetica,sans-serif;margin:24px}pre{white-space:pre-wrap;background:#f8fafc;border:1px solid #e2e8f0;padding:12px}</style>"
+    "</head><body><h1>Resistance Mutation Evidence Summary</h1>"
+    "<p><strong>Note:</strong> The styled mutation-evidence renderer did not complete, so this fallback report preserves the raw TSV for Cromwell output collection.</p>"
+    + body + "</body></html>"
+)
+PYMUTHTML_FALLBACK
+    fi
   >>>
 
   runtime {
@@ -4382,11 +4739,31 @@ task TB_SURVEILLANCE_SUMMARY_VISUALS {
     set -euo pipefail
     mkdir -p surveillance_summary
 
+    # Defensive placeholders: Cromwell requires these declared outputs even if
+    # plotting/summary rendering encounters malformed or unusually large fields.
+    printf "lineage	count
+Not available	0
+" > surveillance_summary/lineage_distribution.tsv
+    cat > surveillance_summary/lineage_distribution.svg <<'SVG'
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="240"><rect width="100%" height="100%" fill="#fff"/><text x="450" y="110" text-anchor="middle" font-family="Arial" font-size="22" font-weight="700">Lineage Distribution</text><text x="450" y="145" text-anchor="middle" font-family="Arial" font-size="14" fill="#475569">No lineage summary was generated.</text></svg>
+SVG
+    cat > surveillance_summary/snp_distance_heatmap.svg <<'SVG'
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="240"><rect width="100%" height="100%" fill="#fff"/><text x="450" y="110" text-anchor="middle" font-family="Arial" font-size="22" font-weight="700">SNP Distance Heatmap</text><text x="450" y="145" text-anchor="middle" font-family="Arial" font-size="14" fill="#475569">No SNP distance heatmap was generated.</text></svg>
+SVG
+    printf "sample	integrated_mtbc_status	mtbc_support_source	kraken_mtbc_supported	kraken_species	kraken_mtbc_reads	mtbc_percent	tbprofiler_lineage_status	tbprofiler_main_lineage	tbprofiler_sub_lineage	lineage_group	resistance_profile	drug_resistance_detected	resistant_drugs	mean_depth	selected_for_phylogeny	included_in_tree	selection_basis	tbprofiler_status
+" > surveillance_summary/tb_surveillance_metadata.tsv
+    printf "sample	mean_depth	kraken_mtbc_supported	mtbc_percent	selected_for_phylogeny	included_in_tree	reason
+" > surveillance_summary/qc_filtering_rationale.tsv
+    cat > surveillance_summary/surveillance_summary.html <<'HTML'
+<!doctype html><html><head><meta charset="utf-8"><title>Surveillance Summary</title></head><body><h1>Surveillance Summary</h1><p>Summary was not generated; fallback output created to allow workflow completion.</p></body></html>
+HTML
+
     tb_tsv="~{tbprofiler_summary_tsv}"
     species_tsv="~{if defined(species_typing_tsv) then species_typing_tsv else ""}"
     snp_matrix="~{if defined(pairwise_snp_distance_matrix) then pairwise_snp_distance_matrix else ""}"
     depth_tsv="~{if defined(mean_depth_tsv) then mean_depth_tsv else ""}"
 
+    set +e
     python3 - "$tb_tsv" "$species_tsv" "$snp_matrix" "$depth_tsv" <<'PY'
 import csv
 import html
@@ -4394,6 +4771,15 @@ import re
 import sys
 from pathlib import Path
 from collections import Counter
+
+# Some TB-Profiler/Kraken/Snippy-derived TSV fields can exceed Python's
+# conservative csv module default of 131072 bytes, especially when mutation
+# evidence or long JSON-derived strings are carried forward. Raise the limit so
+# DictReader can parse large but valid TSV rows.
+try:
+    csv.field_size_limit(sys.maxsize)
+except OverflowError:
+    csv.field_size_limit(2147483647)
 
 tb_tsv = Path(sys.argv[1])
 species_tsv = Path(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2] else None
@@ -5096,6 +5482,32 @@ summary_rows.append('</body></html>')
     encoding="utf-8"
 )
 PY
+    py_rc=$?
+    set -e
+
+    if [ "$py_rc" -ne 0 ]; then
+      echo "WARNING: TB_SURVEILLANCE_SUMMARY_VISUALS Python rendering failed with exit code ${py_rc}." >&2
+      echo "WARNING: Keeping fallback surveillance summary outputs so downstream MERGE_TB_REPORTS can proceed." >&2
+    fi
+
+    # Final output guard: never let this optional visualization task fail during
+    # output collection because of a missing declared file.
+    [ -s surveillance_summary/lineage_distribution.tsv ] || printf "lineage	count
+Not available	0
+" > surveillance_summary/lineage_distribution.tsv
+    [ -s surveillance_summary/tb_surveillance_metadata.tsv ] || printf "sample	integrated_mtbc_status	mtbc_support_source	kraken_mtbc_supported	kraken_species	kraken_mtbc_reads	mtbc_percent	tbprofiler_lineage_status	tbprofiler_main_lineage	tbprofiler_sub_lineage	lineage_group	resistance_profile	drug_resistance_detected	resistant_drugs	mean_depth	selected_for_phylogeny	included_in_tree	selection_basis	tbprofiler_status
+" > surveillance_summary/tb_surveillance_metadata.tsv
+    [ -s surveillance_summary/qc_filtering_rationale.tsv ] || printf "sample	mean_depth	kraken_mtbc_supported	mtbc_percent	selected_for_phylogeny	included_in_tree	reason
+" > surveillance_summary/qc_filtering_rationale.tsv
+    [ -s surveillance_summary/lineage_distribution.svg ] || cat > surveillance_summary/lineage_distribution.svg <<'SVG'
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="240"><rect width="100%" height="100%" fill="#fff"/><text x="450" y="110" text-anchor="middle" font-family="Arial" font-size="22" font-weight="700">Lineage Distribution</text><text x="450" y="145" text-anchor="middle" font-family="Arial" font-size="14" fill="#475569">No lineage summary was generated.</text></svg>
+SVG
+    [ -s surveillance_summary/snp_distance_heatmap.svg ] || cat > surveillance_summary/snp_distance_heatmap.svg <<'SVG'
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="240"><rect width="100%" height="100%" fill="#fff"/><text x="450" y="110" text-anchor="middle" font-family="Arial" font-size="22" font-weight="700">SNP Distance Heatmap</text><text x="450" y="145" text-anchor="middle" font-family="Arial" font-size="14" fill="#475569">No SNP distance heatmap was generated.</text></svg>
+SVG
+    [ -s surveillance_summary/surveillance_summary.html ] || cat > surveillance_summary/surveillance_summary.html <<'HTML'
+<!doctype html><html><head><meta charset="utf-8"><title>Surveillance Summary</title></head><body><h1>Surveillance Summary</h1><p>Summary was not generated; fallback output created to allow workflow completion.</p></body></html>
+HTML
   >>>
 
   runtime {
@@ -5126,6 +5538,10 @@ task MERGE_TB_REPORTS {
     File? mtbc_samples_txt
     File? species_typing_html
     File? species_typing_tsv
+    File? ntm_species_summary_html
+    File? ntm_species_summary_tsv
+    File? mycobacteria_routing_summary_tsv
+    File? mycobacteria_routing_status
     File? qc_summary_html
     File? trimming_report_html
     File? variant_summary_html
@@ -5159,6 +5575,10 @@ task MERGE_TB_REPORTS {
     resistance_tsv="~{if defined(resistance_profile_summary_tsv) then resistance_profile_summary_tsv else ""}"
     species_html="~{if defined(species_typing_html) then species_typing_html else ""}"
     species_tsv="~{if defined(species_typing_tsv) then species_typing_tsv else ""}"
+    ntm_html="~{if defined(ntm_species_summary_html) then ntm_species_summary_html else ""}"
+    ntm_tsv="~{if defined(ntm_species_summary_tsv) then ntm_species_summary_tsv else ""}"
+    routing_tsv="~{if defined(mycobacteria_routing_summary_tsv) then mycobacteria_routing_summary_tsv else ""}"
+    routing_status_txt="~{if defined(mycobacteria_routing_status) then mycobacteria_routing_status else ""}"
     nonsyn_tsv="~{if defined(nonsynonymous_mutations_tsv) then nonsynonymous_mutations_tsv else ""}"
     mutation_tsv="~{if defined(tbprofiler_mutation_evidence_tsv) then tbprofiler_mutation_evidence_tsv else ""}"
     snp_pairs_tsv="~{if defined(pairwise_snp_distance_pairs) then pairwise_snp_distance_pairs else ""}"
@@ -5238,6 +5658,21 @@ task MERGE_TB_REPORTS {
       nonsyn_tsv="final_report/empty_nonsyn.tsv"
     fi
 
+    if [ -z "$ntm_tsv" ] || [ ! -f "$ntm_tsv" ]; then
+      echo -e "Sample_ID\tMost_Probable_Mycobacterium_Species\tMycobacteria_Category\tMTBC_Supported\tMTBC_Reads\tMTBC_Percent\tEvidence\tWorkflow_Decision\tSelection_Basis" > final_report/empty_ntm_species_summary.tsv
+      ntm_tsv="final_report/empty_ntm_species_summary.tsv"
+    fi
+
+    if [ -z "$routing_tsv" ] || [ ! -f "$routing_tsv" ]; then
+      echo -e "Sample_ID\tMost_Probable_Mycobacterium_Species\tMycobacteria_Category\tMTBC_Supported\tMTBC_Reads\tMTBC_Percent\tEvidence\tWorkflow_Decision\tSelection_Basis" > final_report/empty_mycobacteria_routing_summary.tsv
+      routing_tsv="final_report/empty_mycobacteria_routing_summary.tsv"
+    fi
+
+    if [ -z "$routing_status_txt" ] || [ ! -f "$routing_status_txt" ]; then
+      echo "Mycobacteria routing summary was not provided." > final_report/empty_mycobacteria_routing_status.txt
+      routing_status_txt="final_report/empty_mycobacteria_routing_status.txt"
+    fi
+
     if [ -z "$mutation_tsv" ] || [ ! -f "$mutation_tsv" ]; then
       echo -e "sample\tdrug\tgene\tmutation\tchange\tconfidence\tevidence\tsource_json" > final_report/empty_mutation_evidence.tsv
       mutation_tsv="final_report/empty_mutation_evidence.tsv"
@@ -5273,7 +5708,7 @@ task MERGE_TB_REPORTS {
       iqtree_status_txt="final_report/empty_iqtree_status.txt"
     fi
 
-    python3 - "$tb_tsv" "$resistance_tsv" "$species_tsv" "$nonsyn_tsv" "$mutation_tsv" "$snp_pairs_tsv" "$snp_cluster_tsv" "$lineage_tsv" "$surveillance_metadata_tsv" "$qc_rationale_tsv" "$qc_html" "$trim_html" "$variant_html" "$iqtree_txt" "$species_html" "$iqtree_excluded_tsv" "$iqtree_included_tsv" "$iqtree_filtering_summary_txt" "$iqtree_status_txt" <<'PY'
+    python3 - "$tb_tsv" "$resistance_tsv" "$species_tsv" "$ntm_tsv" "$routing_tsv" "$routing_status_txt" "$nonsyn_tsv" "$mutation_tsv" "$snp_pairs_tsv" "$snp_cluster_tsv" "$lineage_tsv" "$surveillance_metadata_tsv" "$qc_rationale_tsv" "$qc_html" "$trim_html" "$variant_html" "$iqtree_txt" "$species_html" "$ntm_html" "$iqtree_excluded_tsv" "$iqtree_included_tsv" "$iqtree_filtering_summary_txt" "$iqtree_status_txt" <<'PY'
 import csv
 import html
 import re
@@ -5282,7 +5717,7 @@ from pathlib import Path
 from collections import defaultdict
 from datetime import datetime, timezone
 
-summary_tsv, resistance_tsv, species_tsv, nonsyn_tsv, mutation_tsv, snp_pairs_tsv, snp_cluster_tsv, lineage_tsv, surveillance_metadata_tsv, qc_rationale_tsv, qc_html, trim_html, variant_html, iqtree_txt, species_html, iqtree_excluded_tsv, iqtree_included_tsv, iqtree_filtering_summary_txt, iqtree_status_txt = sys.argv[1:20]
+summary_tsv, resistance_tsv, species_tsv, ntm_tsv, routing_tsv, routing_status_txt, nonsyn_tsv, mutation_tsv, snp_pairs_tsv, snp_cluster_tsv, lineage_tsv, surveillance_metadata_tsv, qc_rationale_tsv, qc_html, trim_html, variant_html, iqtree_txt, species_html, ntm_html, iqtree_excluded_tsv, iqtree_included_tsv, iqtree_filtering_summary_txt, iqtree_status_txt = sys.argv[1:24]
 
 outdir = Path("final_report")
 outdir.mkdir(exist_ok=True)
@@ -5380,6 +5815,51 @@ def normalize_missing(v, replacement="Not reported"):
 rows = read_tsv_rows(summary_tsv)
 resistance_rows = read_tsv_rows(resistance_tsv)
 species_rows = read_tsv_rows(species_tsv)
+ntm_rows = read_tsv_rows(ntm_tsv)
+routing_rows = read_tsv_rows(routing_tsv)
+routing_status_text = read_optional_file(routing_status_txt).strip() or "Mycobacteria routing summary was not provided."
+
+# -------------------------------------------------------------------------
+# Single source of truth for MTBC/NTM routing in the final report.
+# -------------------------------------------------------------------------
+# The final HTML must not infer MTBC retention from TB-Profiler, Snippy, or
+# IQ-TREE outputs. Those are downstream results. Routing comes first and is
+# determined by MYCOBACTERIA_SAMPLE_ROUTER using Kraken2/Bracken support.
+# These maps are used across dashboard counters, NTM tables, TB-Profiler rows,
+# mutation evidence, lineage summaries, QC metadata, and tree notes.
+# -------------------------------------------------------------------------
+
+routing_by_sample = {}
+mtbc_routed_samples = set()
+non_mtbc_routed_samples = set()
+ntm_display_rows_from_routing = []
+
+for rr in routing_rows:
+    sid = normalize_sample_id(rr.get("Sample_ID") or rr.get("sample") or rr.get("sample_id") or "")
+    if not sid:
+        continue
+    category = clean(rr.get("Mycobacteria_Category") or rr.get("Category") or "")
+    routing_by_sample[sid] = rr
+    if category == "MTBC":
+        mtbc_routed_samples.add(sid)
+    else:
+        non_mtbc_routed_samples.add(sid)
+        ntm_display_rows_from_routing.append(rr)
+
+def is_sample_routed_mtbc(sample):
+    sid = normalize_sample_id(sample)
+    if sid in mtbc_routed_samples:
+        return True
+    if sid in non_mtbc_routed_samples:
+        return False
+    # Fallback for older runs without router TSV: trust explicit TB-Profiler
+    # mtbc_selected only when router information is unavailable.
+    return False
+
+def is_sample_routed_non_mtbc(sample):
+    sid = normalize_sample_id(sample)
+    return sid in non_mtbc_routed_samples
+
 nonsyn_rows = read_tsv_rows(nonsyn_tsv)
 mutation_rows = read_tsv_rows(mutation_tsv)
 snp_pair_rows = read_tsv_rows(snp_pairs_tsv)
@@ -5500,12 +5980,12 @@ def selected_for_mtbc_workflow_html(mtbc_selected, mtbc_reason):
 
 iqtree_included_count = len([
     s for s in iqtree_included_map
-    if s and not is_reference_name(s)
+    if s and not is_reference_name(s) and (not routing_by_sample or s in mtbc_routed_samples)
 ])
 
 iqtree_excluded_count = len([
     s for s in iqtree_excluded_map
-    if s and not is_reference_name(s)
+    if s and not is_reference_name(s) and (not routing_by_sample or s in mtbc_routed_samples)
 ])
 
 def normalize_drug_name(x):
@@ -5813,20 +6293,24 @@ def cluster_badge(label):
 
     return '<span class="badge" style="background:#9ca3af !important;color:white !important;font-weight:700;">Not interpreted</span>'
 
-total_samples = max(len(species_rows), len(rows))
+total_samples = max(len(species_rows), len(routing_by_sample), len(rows))
 
-mtbc_retained = 0
+# Dashboard counters are driven by routing, not by downstream task artifacts.
+mtbc_retained = len([s for s in mtbc_routed_samples if s and not is_reference_name(s)])
+non_mtbc = len([s for s in non_mtbc_routed_samples if s and not is_reference_name(s)])
 
-for r in rows:
-    if clean(r.get("mtbc_selected")).upper() == "YES":
-        mtbc_retained += 1
-
-non_mtbc = max(total_samples - mtbc_retained, 0)
+if not routing_by_sample:
+    # Backward-compatible fallback for older reports without router TSV.
+    mtbc_retained = sum(1 for r in rows if clean(r.get("mtbc_selected")).upper() == "YES")
+    non_mtbc = max(total_samples - mtbc_retained, 0)
 
 drug_resistant = 0
 
 for r in rows:
-    info = get_resistance_info(r.get("sample"), r)
+    sample = r.get("sample")
+    if routing_by_sample and not is_sample_routed_mtbc(sample):
+        continue
+    info = get_resistance_info(sample, r)
     category = info["resistance_profile"]
 
     if is_drug_resistant_category(category):
@@ -5953,11 +6437,72 @@ Species typing was performed using Kraken2 against a custom Mycobacterium-only d
 </div>
 """
 
+def build_ntm_species_section():
+    display_rows = ntm_display_rows_from_routing if ntm_display_rows_from_routing else [r for r in ntm_rows if clean(r.get("Mycobacteria_Category")) != "MTBC"]
+
+    if not display_rows:
+        body = '<tr><td colspan="7">No non-MTBC Mycobacterium or NTM samples were detected by Kraken2/Bracken.</td></tr>'
+    else:
+        body_parts = []
+        for r in display_rows:
+            sample = r.get("Sample_ID") or r.get("sample") or ""
+            species = r.get("Most_Probable_Mycobacterium_Species") or r.get("Species_Identified") or r.get("species") or "Not resolved"
+            category = r.get("Mycobacteria_Category") or "Non-MTBC Mycobacterium"
+            mtbc_reads = r.get("MTBC_Reads") or "0"
+            mtbc_percent = r.get("MTBC_Percent") or "0.00"
+            evidence = r.get("Evidence") or "No supporting evidence reported"
+            decision = r.get("Workflow_Decision") or "Reported and excluded from MTBC-specific downstream analyses"
+
+            body_parts.append(
+                "<tr>"
+                f"<td>{safe(sample)}</td>"
+                f"<td><em>{safe(species)}</em></td>"
+                f"<td>{safe(category)}</td>"
+                f"<td>{safe(mtbc_reads)}</td>"
+                f"<td>{safe(mtbc_percent)}</td>"
+                f"<td>{safe(evidence)}</td>"
+                f"<td>{safe(decision)}</td>"
+                "</tr>"
+            )
+        body = "".join(body_parts)
+
+    return f"""
+<div class="section">
+<h2>2b. Non-MTBC Mycobacteria Species Summary</h2>
+<div class="note">
+<strong>Routing status:</strong> {safe(routing_status_text)}<br><br>
+Kraken2/Bracken species typing is used as the first routing layer. MTBC-supported samples are retained for TB-Profiler, drug-resistance interpretation, and MTBC-specific phylogenomics. Non-MTBC Mycobacterium samples are reported in this section and excluded from TB-Profiler and MTBC-specific downstream analyses.
+</div>
+<div class="controls">
+<input id="ntmSearch" onkeyup="filterTable('ntmSearch','ntmTable')" placeholder="Search non-MTBC Mycobacteria results...">
+<button onclick="downloadCSV('ntmTable','non_mtbc_mycobacteria_summary.csv')">Download Non-MTBC Mycobacteria CSV</button>
+</div>
+<table id="ntmTable">
+<thead>
+<tr>
+<th class="sample" onclick="sortTable('ntmTable',0)">Sample ID</th>
+<th class="species" onclick="sortTable('ntmTable',1)">Most probable Mycobacterium species</th>
+<th class="status" onclick="sortTable('ntmTable',2)">Category</th>
+<th class="status" onclick="sortTable('ntmTable',3)">MTBC reads</th>
+<th class="status" onclick="sortTable('ntmTable',4)">MTBC percent</th>
+<th class="status" onclick="sortTable('ntmTable',5)">Evidence</th>
+<th class="status" onclick="sortTable('ntmTable',6)">Workflow decision</th>
+</tr>
+</thead>
+<tbody>
+{body}
+</tbody>
+</table>
+</div>
+"""
+
 def build_tb_rows():
     out = []
 
     for r in rows:
         sample = r.get("sample")
+        if routing_by_sample and not is_sample_routed_mtbc(sample):
+            continue
         species = r.get("species") or "Mycobacterium tuberculosis complex (inferred from available MTBC evidence)"
         main_lineage = normalize_missing(r.get("main_lineage"), "Not resolved by TB-Profiler")
         sub_lineage = normalize_missing(r.get("sub_lineage"), "Not resolved by TB-Profiler")
@@ -5991,6 +6536,9 @@ def build_tb_rows():
             "</tr>"
         )
 
+    if not out:
+        return '<tr><td colspan="7">No MTBC-routed TB-Profiler rows were available. Non-MTBC/NTM samples are intentionally excluded from this section.</td></tr>'
+
     return "".join(out)
 
 def build_mutation_evidence_section():
@@ -5998,6 +6546,7 @@ def build_mutation_evidence_section():
         r for r in mutation_rows
         if any(clean(v) for v in r.values())
         and clean(r.get("sample"))
+        and (not routing_by_sample or is_sample_routed_mtbc(r.get("sample")))
     ]
 
     if not cleaned:
@@ -6055,6 +6604,7 @@ def build_nonsyn_section():
     cleaned = [
         r for r in nonsyn_rows
         if any(clean(v) for v in r.values())
+        and (not routing_by_sample or is_sample_routed_mtbc(r.get("sample")))
     ]
 
     if not cleaned:
@@ -6222,10 +6772,25 @@ Pairwise SNP distances were calculated from the MTBC core genome alignment after
 def build_lineage_distribution_section():
     lineage_svg_exists = Path("final_report/lineage_distribution.svg").exists()
 
-    cleaned = [
-        r for r in lineage_rows
-        if any(clean(v) for v in r.values())
-    ]
+    # Recompute lineage counts from MTBC-routed TB-Profiler rows. This prevents
+    # non-MTBC/NTM samples from appearing as L6 or Not resolved by TB-Profiler.
+    lineage_counts = defaultdict(int)
+    for rr in rows:
+        sample = rr.get("sample")
+        if routing_by_sample and not is_sample_routed_mtbc(sample):
+            continue
+        lineage = clean(rr.get("main_lineage")) or "Not resolved by TB-Profiler"
+        if lower_clean(lineage) in ["", "none", "not reported", "unknown", "na", "n/a"]:
+            lineage = "Not resolved by TB-Profiler"
+        lineage_counts[lineage] += 1
+
+    if lineage_counts:
+        cleaned = [{"lineage": k, "count": str(v)} for k, v in sorted(lineage_counts.items())]
+    else:
+        cleaned = [
+            r for r in lineage_rows
+            if any(clean(v) for v in r.values())
+        ]
 
     if not cleaned:
         return """
@@ -6453,11 +7018,13 @@ def build_iqtree_exclusion_footnote():
     cleaned = [
         r for r in iqtree_excluded_rows
         if clean(r.get("sample"))
+        and (not routing_by_sample or normalize_sample_id(r.get("sample")) in mtbc_routed_samples)
     ]
 
     included_count = len([
         r for r in iqtree_included_rows
         if clean(r.get("sample"))
+        and (not routing_by_sample or normalize_sample_id(r.get("sample")) in mtbc_routed_samples)
     ])
 
     status_line = f"<p><strong>IQ-TREE status:</strong> {safe(iqtree_status_text)}"
@@ -6550,7 +7117,7 @@ def build_iqtree_exclusion_footnote():
 <div class="tree-notes">
 <h4>Phylogenetic tree notes</h4>
 {status_line}
-<p><strong>{len(cleaned)} sample(s)</strong> were excluded from IQ-TREE before phylogenetic inference because their core-SNP alignment sequence did not meet tree-building quality requirements. These samples remain part of the wider workflow and are excluded only from the phylogenetic tree.</p>
+<p><strong>{len(cleaned)} MTBC-routed sample(s)</strong> were excluded from IQ-TREE before phylogenetic inference because their core-SNP alignment sequence did not meet tree-building quality requirements. Non-MTBC/NTM samples are counted separately as excluded from the MTBC workflow and are not described as IQ-TREE-only exclusions.</p>
 <ul>
 {''.join(notes)}
 </ul>
@@ -6853,7 +7420,7 @@ pre{{
 <body>
 <div class="header">
 <h1>rMAP-TB Interactive Report</h1>
-<p>Trimming → QC → Species typing → TB-Profiler → MTBC-only filtering → mutation evidence → lineage and surveillance summaries → SNP distance clustering and heatmap → core-SNP phylogenomics → final merged report</p>
+<p>Trimming → QC → Species typing → MTBC/NTM routing → TB-Profiler for MTBC-supported samples → mutation evidence → lineage and surveillance summaries → SNP distance clustering and heatmap → core-SNP phylogenomics → final merged report</p>
 <p><strong>Run generated:</strong> {safe(run_started_utc)} &nbsp; | &nbsp; <strong>Run stamp:</strong> {safe(run_stamp)}</p>
 </div>
 
@@ -6869,6 +7436,8 @@ pre{{
 {build_qc_section()}
 
 {build_species_section()}
+
+{build_ntm_species_section()}
 
 <div class="section">
 <h2>3. TB-Profiler Resistance, Species, and Lineage Report</h2>

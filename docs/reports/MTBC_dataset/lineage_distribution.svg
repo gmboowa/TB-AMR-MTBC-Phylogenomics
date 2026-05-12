@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="520" viewBox="0 0 1000 520">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="500.0" y="35" text-anchor="middle" font-family="Arial" font-size="22" font-weight="700" fill="#0f172a">Lineage Distribution</text>
+<text x="500.0" y="58" text-anchor="middle" font-family="Arial" font-size="12" fill="#475569">TB-Profiler lineage calls where available; unresolved Kraken-supported MTBC samples are shown separately.</text>
+<line x1="120" y1="70" x2="120" y2="440" stroke="#334155" stroke-width="2"/>
+<line x1="120" y1="440" x2="940" y2="440" stroke="#334155" stroke-width="2"/>
+<rect x="144" y="222" width="64" height="218" rx="8" fill="#2563eb"/>
+<text x="176.0" y="214" text-anchor="middle" font-family="Arial" font-size="14" font-weight="700" fill="#0f172a">5</text>
+<text x="176.0" y="470" text-anchor="middle" font-family="Arial" font-size="13" fill="#0f172a">L1</text>
+<rect x="232" y="397" width="64" height="43" rx="8" fill="#2563eb"/>
+<text x="264.0" y="389" text-anchor="middle" font-family="Arial" font-size="14" font-weight="700" fill="#0f172a">1</text>
+<text x="264.0" y="470" text-anchor="middle" font-family="Arial" font-size="13" fill="#0f172a">L2</text>
+<rect x="320" y="309" width="64" height="131" rx="8" fill="#2563eb"/>
+<text x="352.0" y="301" text-anchor="middle" font-family="Arial" font-size="14" font-weight="700" fill="#0f172a">3</text>
+<text x="352.0" y="470" text-anchor="middle" font-family="Arial" font-size="13" fill="#0f172a">L3</text>
+<rect x="408" y="178" width="64" height="262" rx="8" fill="#2563eb"/>
+<text x="440.0" y="170" text-anchor="middle" font-family="Arial" font-size="14" font-weight="700" fill="#0f172a">6</text>
+<text x="440.0" y="470" text-anchor="middle" font-family="Arial" font-size="13" fill="#0f172a">L4</text>
+<rect x="496" y="397" width="64" height="43" rx="8" fill="#2563eb"/>
+<text x="528.0" y="389" text-anchor="middle" font-family="Arial" font-size="14" font-weight="700" fill="#0f172a">1</text>
+<text x="528.0" y="470" text-anchor="middle" font-family="Arial" font-size="13" fill="#0f172a">L9</text>
+<rect x="584" y="397" width="64" height="43" rx="8" fill="#2563eb"/>
+<text x="616.0" y="389" text-anchor="middle" font-family="Arial" font-size="14" font-weight="700" fill="#0f172a">1</text>
+<text x="616.0" y="470" text-anchor="middle" font-family="Arial" font-size="13" fill="#0f172a">La2 La2</text>
+<rect x="672" y="353" width="64" height="87" rx="8" fill="#2563eb"/>
+<text x="704.0" y="345" text-anchor="middle" font-family="Arial" font-size="14" font-weight="700" fill="#0f172a">2</text>
+<text x="704.0" y="470" text-anchor="middle" font-family="Arial" font-size="13" fill="#0f172a">La3 La3</text>
+<rect x="760" y="309" width="64" height="131" rx="8" fill="#2563eb"/>
+<text x="792.0" y="301" text-anchor="middle" font-family="Arial" font-size="14" font-weight="700" fill="#0f172a">3</text>
+<text x="792.0" y="470" text-anchor="middle" font-family="Arial" font-size="13" fill="#0f172a">M.canetti M.canetti</text>
+<rect x="848" y="90" width="64" height="350" rx="8" fill="#2563eb"/>
+<text x="880.0" y="82" text-anchor="middle" font-family="Arial" font-size="14" font-weight="700" fill="#0f172a">8</text>
+<text x="880.0" y="470" text-anchor="middle" font-family="Arial" font-size="13" fill="#0f172a">Not resolved by TB-Profiler</text>
+<text x="500.0" y="496" text-anchor="middle" font-family="Arial" font-size="12" fill="#475569">Lineage groups are summarized from TB-Profiler main-lineage and sub-lineage fields. Lineage does not determine phylogeny selection.</text></svg>
