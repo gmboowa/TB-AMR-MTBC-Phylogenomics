@@ -30,21 +30,21 @@ QC aggregation with MultiQC
 Mycobacteria species typing with Kraken2 + Bracken
           ⬇
 MTBC / non-MTBC Mycobacteria routing
-        │
-        ├──────────────────────────────────────────────▶ Non-MTBC Mycobacteria / NTM branch
-        │                                                       ⬇
-        │                                               NTM speciation summary
-        │                                                       ⬇
-        │                                               Most probable NTM species identified
-        │                                                       ⬇
-        │                                               Species-level evidence and MTBC support
-        │                                                       ⬇
-        │                                               Exclusion from MTBC-specific analysis
-        │                                                       ⬇
-        │                                               Non-MTBC Mycobacteria species summary
-        │                                                       ⬇
-        │                                               Integrated HTML report
-        │
+          │
+          ├──────────────────────────────────────────────▶ Non-MTBC Mycobacteria / NTM branch
+          │                                                       ⬇
+          │                                               NTM speciation summary
+          │                                                       ⬇
+          │                                               Most probable NTM species identified
+          │                                                       ⬇
+          │                                               Species-level evidence and MTBC support
+          │                                                       ⬇
+          │                                               Exclusion from MTBC-specific analysis
+          │                                                       ⬇
+          │                                               Non-MTBC Mycobacteria species summary
+          │                                                       ⬇
+          │                                               Integrated HTML report
+          │
           ⬇
 MTBC-supported samples only
           ⬇
