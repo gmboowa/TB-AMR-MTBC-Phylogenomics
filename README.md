@@ -15,10 +15,6 @@ rMAP-TB generates integrated HTML reports & downloadable public-health surveilla
 </p>
 ## rMAP-TB workflow overview
 
-<p align="center">
-  <img src="docs/assets/workflow/rMAP_TB.png"
-       alt="rMAP-TB workflow overview"
-       width="100%">
 </p>
 
 ```text
@@ -35,17 +31,17 @@ Mycobacteria species typing with Kraken2 + Bracken
 MTBC / non-MTBC Mycobacteria routing
         │
         ├──────────────────────────────────────────────▶ Non-MTBC Mycobacteria / NTM branch
-        │                                                   ⬇
+        │                                                     ⬇
         │                                               NTM speciation summary
-        │                                                   ⬇
+        │                                                     ⬇
         │                                               Most probable NTM species identified
-        │                                                   ⬇
+        │                                                     ⬇
         │                                               Species-level evidence and MTBC support
-        │                                                   ⬇
+        │                                                     ⬇
         │                                               Exclusion from MTBC-specific analysis
-        │                                                   ⬇
+        │                                                     ⬇
         │                                               Non-MTBC Mycobacteria species summary
-        │                                                   ⬇
+        │                                                     ⬇
         │                                               Integrated HTML report
         │
         ⬇
