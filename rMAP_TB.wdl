@@ -1014,7 +1014,7 @@ PY
   }
 
   runtime {
-    docker: "~{docker_image}"
+    docker: docker_image
     cpu: cpu
     memory: "~{memory_gb} GB"
   }
@@ -1218,7 +1218,7 @@ PY
   >>>
 
   runtime {
-    docker: "~{docker_image}"
+    docker: docker_image
     cpu: cpu
     memory: "~{memory_gb} GB"
     disks: "local-disk 20 HDD"
