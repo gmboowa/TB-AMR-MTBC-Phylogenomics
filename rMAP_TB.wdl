@@ -811,32 +811,23 @@ task SPECIES_TYPING {
       fi
 
       #########################################################################
-      # Explicit Kraken2/Bracken-based MTBC support logic.
+      # Conservative top-species-first MTBC routing rule.
       #
-      # A sample is marked MTBC_Supported=YES when either:
-      #   1. Kraken2 reports reads at the MTBC complex node, taxid 77643; or
-      #   2. the top species-level call text is clearly M. tuberculosis.
+      # The top species-level Kraken2 call is treated as the primary routing
+      # evidence. A clear non-MTBC Mycobacterium top call, such as
+      # Mycobacterium avium, is NOT routed into the MTBC workflow even when the
+      # MTBC-complex node has background/cross-assigned reads.
       #
-      # This field is the one downstream tasks should use for selecting samples
-      # for Snippy/core-SNP/IQ-TREE.
+      # Routing order:
+      #   1. If the top species-level call is a recognized MTBC member, route as
+      #      MTBC.
+      #   2. If the top species-level call is a clear non-MTBC Mycobacterium,
+      #      exclude from MTBC-specific downstream analyses.
+      #   3. Only when the species-level call is unresolved, allow strong MTBC
+      #      complex-node support (>=10% and >=1,000 reads) to route as MTBC.
       #########################################################################
 
       final_call_lc="$(echo "$final_call" | tr '[:upper:]' '[:lower:]')"
-
-      #########################################################################
-      # Conservative MTBC routing rule.
-      #
-      # Do NOT route a sample into the MTBC workflow merely because a tiny
-      # number of reads map to the MTBC complex node. Low-level MTBC signal can
-      # occur as cross-assignment/background in a Mycobacterium-only Kraken DB.
-      #
-      # A sample is routed as MTBC only when either:
-      #   1. the top species-level call is clearly M. tuberculosis / MTBC; or
-      #   2. the MTBC complex node has strong support: >=10% and >=1,000 reads.
-      #
-      # This prevents samples such as M. ulcerans / M. adipatum with <1% MTBC
-      # support from being sent to TB-Profiler, Snippy, IQ-TREE, and tree plots.
-      #########################################################################
 
       mtbc_percent_float="$(python3 - <<PYMTBC
 try:
@@ -855,8 +846,15 @@ PYREADS
 )"
 
       top_call_is_mtbc="NO"
-      if echo "$final_call_lc" | grep -Eq "mycobacterium tuberculosis|m\. tuberculosis|mycobacterium tuberculosis complex|mtbc|tuberculosis complex"; then
+      if echo "$final_call_lc" | grep -Eq "mycobacterium tuberculosis complex|tuberculosis complex|(^|[^a-z])mtbc([^a-z]|$)|mycobacterium tuberculosis|m\. tuberculosis|mycobacterium africanum|mycobacterium bovis|mycobacterium caprae|mycobacterium canettii|mycobacterium microti|mycobacterium pinnipedii|mycobacterium orygis|mycobacterium mungi|mycobacterium suricattae|dassie bacillus"; then
         top_call_is_mtbc="YES"
+      fi
+
+      top_call_is_clear_non_mtbc="NO"
+      if [ "$top_call_is_mtbc" = "NO" ] && echo "$final_call_lc" | grep -q "mycobacterium"; then
+        if ! echo "$final_call_lc" | grep -Eq "no species-level|unknown|not resolved|unresolved|^na$|^n/a$"; then
+          top_call_is_clear_non_mtbc="YES"
+        fi
       fi
 
       strong_mtbc_node_support="$(python3 - <<PYSTRONG
@@ -868,13 +866,16 @@ PYSTRONG
 
       if [ "$top_call_is_mtbc" = "YES" ]; then
         mtbc_supported="YES"
-        selection_basis="Selected for MTBC workflow because the top Kraken2 species-level call supports MTBC"
+        selection_basis="Selected for MTBC workflow because the top Kraken2 species-level call is a recognized MTBC member"
+      elif [ "$top_call_is_clear_non_mtbc" = "YES" ]; then
+        mtbc_supported="NO"
+        selection_basis="Not selected for MTBC workflow because the top Kraken2 species-level call is a clear non-MTBC Mycobacterium; MTBC-complex reads are treated as background/cross-assignment"
       elif [ "$strong_mtbc_node_support" = "YES" ]; then
         mtbc_supported="YES"
-        selection_basis="Selected for MTBC workflow because Kraken2 detected strong MTBC-complex support: ${mtbc_reads} reads; ${mtbc_percent}%"
+        selection_basis="Selected for MTBC workflow because the species-level call was unresolved and Kraken2 detected strong MTBC-complex support: ${mtbc_reads} reads; ${mtbc_percent}%"
       else
         mtbc_supported="NO"
-        selection_basis="Not selected for MTBC workflow because Kraken2/Bracken species typing did not provide strong MTBC support; low-level MTBC reads alone are treated as background/cross-assignment"
+        selection_basis="Not selected for MTBC workflow because Kraken2/Bracken species typing did not provide MTBC support; low-level MTBC reads alone are treated as background/cross-assignment"
       fi
 
       if [ -z "$top_species_line" ]; then
@@ -1084,16 +1085,50 @@ def clean(v):
 def is_mtbc_supported(row):
     return clean(row.get("MTBC_Supported") or row.get("mtbc_supported")).upper() == "YES"
 
+def species_is_mtbc(species):
+    text = clean(species).lower()
+    mtbc_terms = [
+        "mycobacterium tuberculosis complex",
+        "tuberculosis complex",
+        "mtbc",
+        "mycobacterium tuberculosis",
+        "m. tuberculosis",
+        "mycobacterium africanum",
+        "mycobacterium bovis",
+        "mycobacterium caprae",
+        "mycobacterium canettii",
+        "mycobacterium microti",
+        "mycobacterium pinnipedii",
+        "mycobacterium orygis",
+        "mycobacterium mungi",
+        "mycobacterium suricattae",
+        "dassie bacillus"
+    ]
+    return any(term in text for term in mtbc_terms)
+
+def species_is_unresolved(species):
+    text = clean(species).lower()
+    return (not text) or text in ["no species-level mycobacterium call", "no species-level call", "unknown", "na", "n/a", "not resolved", "unresolved"]
+
+def species_is_clear_non_mtbc_mycobacterium(species):
+    text = clean(species).lower()
+    return ("mycobacterium" in text) and (not species_is_mtbc(text)) and (not species_is_unresolved(text))
+
 def classify(row):
     species = clean(row.get("Species_Identified") or row.get("Species identified") or row.get("species") or row.get("Species"))
     evidence = clean(row.get("Evidence") or row.get("evidence"))
-    text = f"{species} {evidence}".lower()
 
+    # Top-species-first routing: a clear non-MTBC Mycobacterium top call
+    # overrides any background MTBC-complex read signal.
+    if species_is_mtbc(species):
+        return "MTBC"
+    if species_is_clear_non_mtbc_mycobacterium(species):
+        return "NTM"
     if is_mtbc_supported(row):
         return "MTBC"
-    if not species or species.lower() in ["no species-level mycobacterium call", "no species-level call", "unknown", "na", "n/a"]:
+    if species_is_unresolved(species):
         return "Unresolved Mycobacterium"
-    if "mycobacterium" in text:
+    if "mycobacterium" in f"{species} {evidence}".lower():
         return "NTM"
     return "Non-Mycobacterium or low-confidence"
 
@@ -1777,14 +1812,35 @@ def get_kraken_support(sample, species_tsv):
                             supports_mtbc = False
                         else:
                             # Conservative fallback for legacy species TSVs.
+                            # Prioritize the top species call. A clear non-MTBC
+                            # Mycobacterium call should not be rescued by
+                            # background MTBC-complex node reads.
                             species_lc = kraken_species.lower()
-                            top_call_is_mtbc = any(t in species_lc for t in [
+                            mtbc_terms = [
+                                "mycobacterium tuberculosis complex",
+                                "tuberculosis complex",
+                                "mtbc",
                                 "mycobacterium tuberculosis",
                                 "m. tuberculosis",
-                                "mycobacterium tuberculosis complex",
-                                "mtbc",
-                                "tuberculosis complex"
-                            ])
+                                "mycobacterium africanum",
+                                "mycobacterium bovis",
+                                "mycobacterium caprae",
+                                "mycobacterium canettii",
+                                "mycobacterium microti",
+                                "mycobacterium pinnipedii",
+                                "mycobacterium orygis",
+                                "mycobacterium mungi",
+                                "mycobacterium suricattae",
+                                "dassie bacillus"
+                            ]
+                            top_call_is_mtbc = any(t in species_lc for t in mtbc_terms)
+                            clear_non_mtbc = (
+                                "mycobacterium" in species_lc
+                                and not top_call_is_mtbc
+                                and not any(t in species_lc for t in [
+                                    "no species-level", "unknown", "not resolved", "unresolved"
+                                ])
+                            )
                             try:
                                 mtbc_pct = float(row.get("MTBC_Percent") or row.get("mtbc_percent") or 0)
                             except Exception:
@@ -1793,7 +1849,7 @@ def get_kraken_support(sample, species_tsv):
                                 mtbc_reads = int(float(row.get("MTBC_Reads") or row.get("mtbc_reads") or 0))
                             except Exception:
                                 mtbc_reads = 0
-                            supports_mtbc = bool(top_call_is_mtbc or (mtbc_pct >= 10.0 and mtbc_reads >= 1000))
+                            supports_mtbc = bool(top_call_is_mtbc or ((not clear_non_mtbc) and mtbc_pct >= 10.0 and mtbc_reads >= 1000))
                         break
         except Exception:
             kraken_species = ""
@@ -4992,17 +5048,42 @@ def infer_kraken_mtbc_support(row):
         or ""
     )
 
-    evidence = row.get("Evidence") or row.get("evidence") or ""
+    species_text = str(species or "").strip().lower()
 
-    text = " ".join([species, evidence]).lower()
-
-    if any(t in text for t in [
+    mtbc_terms = [
+        "mycobacterium tuberculosis complex",
+        "tuberculosis complex",
+        "mtbc",
         "mycobacterium tuberculosis",
         "m. tuberculosis",
-        "mycobacterium tuberculosis complex",
-        "mtbc",
-        "tuberculosis complex"
-    ]):
+        "mycobacterium africanum",
+        "mycobacterium bovis",
+        "mycobacterium caprae",
+        "mycobacterium canettii",
+        "mycobacterium microti",
+        "mycobacterium pinnipedii",
+        "mycobacterium orygis",
+        "mycobacterium mungi",
+        "mycobacterium suricattae",
+        "dassie bacillus"
+    ]
+
+    if any(t in species_text for t in mtbc_terms):
+        return "YES"
+
+    if "mycobacterium" in species_text:
+        return "NO"
+
+    try:
+        mtbc_pct = float(row.get("MTBC_Percent") or row.get("mtbc_percent") or 0)
+    except Exception:
+        mtbc_pct = 0.0
+    try:
+        mtbc_reads = int(float(row.get("MTBC_Reads") or row.get("mtbc_reads") or 0))
+    except Exception:
+        mtbc_reads = 0
+
+    if mtbc_pct >= 10.0 and mtbc_reads >= 1000:
         return "YES"
 
     return "NO"
