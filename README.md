@@ -82,33 +82,53 @@ Integrated HTML report with downloadable surveillance outputs
 
 ## Key features
 
-- **⬤ Paired-end Illumina FASTQ input support**  
-- **⬤ Adapter trimming & read preprocessing using Trimmomatic**  
-- **⬤ Sequence quality-control assessment using FastQC**  
-- **⬤ Aggregated QC reporting using MultiQC**  
-- **⬤ Mycobacteria species typing using Kraken2 + Bracken before TB-Profiler execution**  
-- **⬤ MTBC / non-MTBC Mycobacteria routing based on Kraken2 + Bracken species-typing results**  
-- **⬤ Non-MTBC Mycobacteria / NTM speciation summary reporting**  
-- **⬤ Reporting of most probable NTM species with species-level evidence & MTBC support status**  
-- **⬤ Exclusion of non-MTBC Mycobacteria from MTBC-specific downstream analyses**  
-- **⬤ TB-Profiler-based MTBC species, lineage, sub-lineage & drug-resistance profiling for MTBC-supported samples**  
-- **⬤ WHO-aligned TB drug-resistance classification, including Hr-TB, RR-TB, MDR/RR-TB, Pre-XDR-TB & XDR-TB**  
-- **⬤ Mutation-level TB-Profiler resistance evidence reporting, including drug, gene, mutation, confidence & evidence fields**  
-- **⬤ MTBC-only sample filtering before downstream phylogenomics**  
-- **⬤ Snippy-based reference-guided per-sample variant calling**  
-- **⬤ Mean-depth extraction & per-sample variant summary reporting**  
-- **⬤ Core-genome SNP alignment generation using Snippy-core**  
-- **⬤ Non-synonymous mutation reporting for key TB drug-resistance-associated genes**  
-- **⬤ Pairwise SNP distance estimation from MTBC core-genome alignments**  
-- **⬤ SNP cluster interpretation using configurable SNP-distance thresholds**  
-- **⬤ SNP distance heatmap generation for genomic relatedness assessment**  
-- **⬤ Lineage distribution summary & visualization**  
-- **⬤ Optional recombination filtering using Gubbins**  
-- **⬤ Maximum-likelihood phylogenetic inference using IQ-TREE2**  
-- **⬤ ETE3-based phylogenetic tree visualization with lineage & resistance metadata**  
-- **⬤ Downloadable QC filtering rationale & surveillance metadata TSV outputs**  
-- **⬤ Integrated interactive HTML report suitable for GitHub Pages deployment**  
-- **⬤ Dockerized modular WDL/Cromwell execution for reproducible analysis**
+rMAP-TB provides a reproducible, modular workflow for Mycobacteria species typing, MTBC-focused tuberculosis genomic surveillance, drug-resistance interpretation, SNP analysis & phylogenomic reporting.
+
+### Input, preprocessing & quality control
+
+- Supports paired-end Illumina FASTQ inputs
+- Performs adapter trimming & read preprocessing using Trimmomatic
+- Runs per-sample sequence quality assessment using FastQC
+- Generates aggregated quality-control reports using MultiQC
+
+### Mycobacteria species typing & sample routing
+
+- Performs Mycobacteria species typing using Kraken2 & Bracken before TB-Profiler execution
+- Routes samples as MTBC or non-MTBC Mycobacteria based on Kraken2/Bracken species-typing results
+- Reports non-MTBC Mycobacteria / NTM speciation summaries
+- Reports the most probable NTM species with species-level evidence & MTBC support status
+- Excludes non-MTBC Mycobacteria from MTBC-specific downstream analyses
+
+### TB-Profiler resistance & lineage interpretation
+
+- Runs TB-Profiler for MTBC-supported samples
+- Reports MTBC species, lineage, sub-lineage and drug-resistance profiles
+- Provides WHO-aligned TB drug-resistance classification, including Hr-TB, RR-TB, MDR/RR-TB, Pre-XDR-TB & XDR-TB
+- Reports mutation-level TB-Profiler resistance evidence, including drug, gene, mutation, confidence & evidence fields
+- Filters MTBC-supported samples for downstream phylogenomics
+
+### Variant calling, SNP analysis & clustering
+
+- Performs Snippy-based reference-guided per-sample variant calling
+- Extracts mean depth & generates per-sample variant summaries
+- Generates core-genome SNP alignments using Snippy-core
+- Reports non-synonymous mutations in key TB drug-resistance-associated genes
+- Estimates pairwise SNP distances from MTBC core-genome alignments
+- Interprets SNP clusters using configurable SNP-distance thresholds
+- Generates SNP distance heatmaps for genomic relatedness assessment
+
+### Phylogenomics & visualization
+
+- Summarizes & visualizes lineage distributions
+- Supports optional recombination filtering using Gubbins
+- Performs maximum-likelihood phylogenetic inference using IQ-TREE2
+- Generates ETE3-based phylogenetic tree visualizations with lineage & resistance metadata
+
+### Reporting & reproducibility
+
+- Produces downloadable QC filtering rationale & surveillance metadata TSV outputs
+- Generates an integrated interactive HTML report suitable for GitHub Pages deployment
+- Uses Dockerized modular WDL/Cromwell execution for reproducible analysis
   
 ## Repository structure
 
@@ -277,128 +297,116 @@ For larger datasets, especially when using Gubbins & IQ-TREE2, consider increasi
 
 ## Main outputs
 
+rMAP-TB produces modular intermediate outputs and a final integrated HTML surveillance report covering quality control, species typing, TB drug-resistance interpretation, SNP analysis, phylogenomics & public-health reporting.
 
-### Quality control & read preprocessing
+### 1. Quality control & read preprocessing
 
-- **⬤ Trimmed paired-end FASTQ files**  
-- **⬤ FastQC per-sample HTML reports**  
-- **⬤ FastQC ZIP output files**  
-- **⬤ MultiQC aggregated quality-control report**  
-- **⬤ Trimming summary table**  
-- **⬤ QC summary HTML report**  
+- Trimmed paired-end FASTQ files
+- FastQC per-sample HTML and ZIP reports
+- MultiQC aggregated quality-control report
+- Trimming summary table
+- QC summary HTML report
 
-### Mycobacteria species typing & MTBC / non-MTBC routing
+### 2. Mycobacteria species typing and MTBC / non-MTBC routing
 
-- **⬤ Kraken2 classification outputs**  
-- **⬤ Kraken2 species-level reports**  
-- **⬤ Bracken abundance outputs**  
-- **⬤ Mycobacteria species typing TSV summary**  
-- **⬤ Species typing HTML report**  
-- **⬤ Most probable Mycobacteria species call per sample**  
-- **⬤ Evidence supporting species assignment**  
-- **⬤ MTBC support status per sample**  
-- **⬤ MTBC / non-MTBC Mycobacteria routing summary**  
+- Kraken2 classification outputs & species-level reports
+- Bracken abundance outputs
+- Mycobacteria species typing TSV & HTML summaries
+- Most probable Mycobacteria species call per sample
+- Evidence supporting species assignment
+- MTBC support status per sample
+- MTBC / non-MTBC Mycobacteria routing summary
 
-### Non-MTBC Mycobacteria / NTM speciation outputs
+### 3. Non-MTBC Mycobacteria / NTM speciation
 
-- **⬤ Non-MTBC Mycobacteria / NTM sample list**  
-- **⬤ Most probable NTM species identified per sample**  
-- **⬤ Species-level evidence supporting NTM assignment**  
-- **⬤ MTBC support status for NTM-classified samples**  
-- **⬤ Non-MTBC Mycobacteria species summary TSV**  
-- **⬤ Non-MTBC Mycobacteria species summary HTML section**  
-- **⬤ Exclusion rationale from MTBC-specific downstream analyses**  
-- **⬤ Integrated report output when all samples are non-MTBC Mycobacteria / NTM**  
+- Non-MTBC Mycobacteria / NTM sample list
+- Most probable NTM species identified per sample
+- Species-level evidence supporting NTM assignment
+- Non-MTBC Mycobacteria species summary TSV & HTML section
+- Rationale for exclusion from MTBC-specific downstream analyses
+- Integrated report output when all samples are non-MTBC Mycobacteria / NTM
 
-### TB-Profiler, lineage & MTBC filtering
+### 4. TB-Profiler, lineage & MTBC filtering
 
-- **⬤ TB-Profiler JSON outputs for MTBC-supported samples**  
-- **⬤ TB-Profiler text reports**  
-- **⬤ Combined TB-Profiler HTML report**  
-- **⬤ TB-Profiler summary TSV**  
-- **⬤ MTBC species, lineage & sub-lineage summary**  
-- **⬤ WHO-aligned TB drug-resistance profile summary**  
-- **⬤ Predicted resistant drugs summary**  
-- **⬤ TB-Profiler mutation-level resistance evidence TSV**  
-- **⬤ TB-Profiler mutation-level resistance evidence HTML report**  
-- **⬤ MTBC-positive sample list**  
-- **⬤ MTBC-filtered FASTQ files for downstream phylogenomics**  
-- **⬤ MTBC selection & exclusion rationale**  
+- TB-Profiler JSON & text outputs for MTBC-supported samples
+- Combined TB-Profiler HTML report
+- TB-Profiler summary TSV
+- MTBC species, lineage & sub-lineage summary
+- WHO-aligned TB drug-resistance profile summary
+- Predicted resistant drugs summary
+- Mutation-level resistance evidence TSV and HTML report
+- MTBC-positive sample list
+- MTBC-filtered FASTQ files for downstream phylogenomics
+- MTBC selection & exclusion rationale
 
-### Variant calling & core-SNP alignment
+### 5. Variant calling & core-SNP alignment
 
-- **⬤ Per-sample Snippy variant-calling directories**  
-- **⬤ Per-sample VCF files**  
-- **⬤ Per-sample aligned FASTA files**  
-- **⬤ Per-sample Snippy tabular variant files**  
-- **⬤ Snippy logs**  
-- **⬤ Variant summary HTML report**  
-- **⬤ Mean-depth summary TSV**  
-- **⬤ Snippy-core full alignment**  
-- **⬤ Snippy-core SNP alignment**  
-- **⬤ Core SNP VCF**  
-- **⬤ Core SNP tabular summary**  
+- Per-sample Snippy variant-calling directories
+- Per-sample VCF, aligned FASTA & tabular variant files
+- Snippy logs
+- Variant summary HTML report
+- Mean-depth summary TSV
+- Snippy-core full alignment
+- Snippy-core SNP alignment
+- Core SNP VCF & tabular summary
 
-### Drug-resistance-associated mutation summaries
+### 6. Drug-resistance-associated mutation summaries
 
-- **⬤ Non-synonymous mutation TSV summary**  
-- **⬤ Non-synonymous mutation HTML report**  
-- **⬤ Per-sample collapsible mutation summaries**  
-- **⬤ Drug-resistance-associated gene-level mutation reporting**  
+- Non-synonymous mutation TSV summary
+- Non-synonymous mutation HTML report
+- Per-sample collapsible mutation summaries
+- Drug-resistance-associated gene-level mutation reporting
 
-### Pairwise SNP distance & cluster interpretation
+### 7. Pairwise SNP distance & cluster interpretation
 
-- **⬤ Pairwise SNP distance matrix TSV**  
-- **⬤ Pairwise SNP distance pairs TSV**  
-- **⬤ SNP cluster summary TSV**  
-- **⬤ SNP distance cluster HTML report**  
-- **⬤ Pairwise SNP heatmap PNG**  
-- **⬤ Reference & non-sample sequence exclusion log**  
-- **⬤ SNP distance task status log**  
+- Pairwise SNP distance matrix TSV
+- Pairwise SNP distance pairs TSV
+- SNP cluster summary TSV
+- SNP distance cluster HTML report
+- Pairwise SNP heatmap PNG
+- Reference & non-sample sequence exclusion log
+- SNP distance task status log
 
-### Surveillance summary outputs
+### 8. Surveillance summary outputs
 
-- **⬤ Lineage distribution TSV**  
-- **⬤ Lineage distribution SVG plot**  
-- **⬤ SNP distance heatmap SVG**  
-- **⬤ QC filtering rationale TSV**  
-- **⬤ Surveillance metadata TSV**  
-- **⬤ Surveillance summary HTML report**  
-- **⬤ Mean depth, MTBC support, lineage, resistance profile & tree-inclusion metadata**  
-- **⬤ Combined MTBC & non-MTBC Mycobacteria reporting metadata where applicable**  
+- Lineage distribution TSV & SVG plot
+- SNP distance heatmap SVG
+- QC filtering rationale TSV
+- Surveillance metadata TSV
+- Surveillance summary HTML report
+- Mean depth, MTBC support, lineage, resistance profile & tree-inclusion metadata
+- Combined MTBC & non-MTBC Mycobacteria reporting metadata, where applicable
 
-### Optional recombination filtering
+### 9. Optional recombination filtering
 
-- **⬤ Gubbins recombination-filtered polymorphic-sites alignment**  
-- **⬤ Gubbins recombination-filtered final tree**  
-- **⬤ Gubbins log files**  
-- **⬤ Recombination-filtering status outputs**  
+- Gubbins recombination-filtered polymorphic-sites alignment
+- Gubbins recombination-filtered final tree
+- Gubbins log files
+- Recombination-filtering status outputs
 
-### Phylogenetic inference & visualization
+### 10. Phylogenetic inference & visualization
 
-- **⬤ IQ-TREE2 maximum-likelihood tree file**  
-- **⬤ IQ-TREE2 report file**  
-- **⬤ IQ-TREE2 log file**  
-- **⬤ Bootstrap-supported Newick tree**  
-- **⬤ Exportable Newick tree for downstream visualization tools such as iTOL**  
-- **⬤ ETE3-rendered MTBC phylogenetic tree image**  
-- **⬤ Cleaned tree file used for visualization**  
-- **⬤ Tree rendering log**  
+- IQ-TREE2 maximum-likelihood tree file
+- IQ-TREE2 report & log files
+- Bootstrap-supported Newick tree
+- Exportable Newick tree for downstream visualization tools such as iTOL
+- ETE3-rendered MTBC phylogenetic tree image
+- Cleaned tree file used for visualization
+- Tree rendering log
 
-### Integrated reports & downloadable public-health outputs
+### 11. Integrated reports & downloadable public-health outputs
 
-- **⬤ Final integrated interactive HTML report**  
-- **⬤ Run metadata file**  
-- **⬤ Downloadable TB surveillance metadata TSV**  
-- **⬤ Downloadable QC filtering rationale TSV**  
-- **⬤ Downloadable Mycobacteria species typing summary TSV**  
-- **⬤ Downloadable non-MTBC Mycobacteria / NTM species summary TSV where applicable**  
-- **⬤ Embedded lineage distribution plot**  
-- **⬤ Embedded SNP distance heatmap**  
-- **⬤ Embedded MTBC phylogenetic tree**  
-- **⬤ Embedded NTM speciation section where non-MTBC Mycobacteria are detected**  
-- **⬤ GitHub Pages-compatible report outputs**  
-
+- Final integrated interactive HTML report
+- Run metadata file
+- Downloadable TB surveillance metadata TSV
+- Downloadable QC filtering rationale TSV
+- Downloadable Mycobacteria species typing summary TSV
+- Downloadable non-MTBC Mycobacteria / NTM species summary TSV, where applicable
+- Embedded lineage distribution plot
+- Embedded SNP distance heatmap
+- Embedded MTBC phylogenetic tree
+- Embedded NTM speciation section when non-MTBC Mycobacteria are detected
+- GitHub Pages-compatible report outputs
 Example final report output:
 
 ```text
